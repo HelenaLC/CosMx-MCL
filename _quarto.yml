@@ -1,0 +1,40 @@
+execute: 
+  cache: false
+  message: false
+  warning: false
+
+format:
+  html:
+    theme: lux
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    standalone: true
+    embed-resources: true
+
+project:
+  type: website
+  output-dir: docs
+  execute-dir: project
+  render: 
+    - code/*.qmd
+    
+website:
+  title: MCL
+  navbar:
+    search: false
+    left:
+      - href: code/index.qmd
+      - href: code/00-ref.qmd
+      - href: code/00-raw.qmd
+      - href: code/01-fil.qmd
+      - href: code/02-sig.qmd
+      - href: code/02-ccc.qmd
+      - href: code/02-ist.qmd
+      - href: code/03-jst.qmd
+      - href: code/04-ctx.qmd
+      - href: code/05-pro.qmd
+      - text: eda
+        menu:
+          - href: code/06-eda-sig.qmd
+          - href: code/06-eda-ccc.qmd

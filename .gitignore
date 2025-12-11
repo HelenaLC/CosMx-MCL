@@ -4,6 +4,8 @@ plts/
 docs/
 /.quarto/
 outs/*rds
+data/ref/*
+data/sig/*
 data/raw/*csv
 code/*_cache
 code/*rkdown
