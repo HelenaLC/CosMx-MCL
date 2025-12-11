@@ -1,0 +1,9 @@
+arch/
+meta/
+plts/
+docs/
+/.quarto/
+outs/*rds
+data/raw/*csv
+code/*_cache
+code/*rkdown
