@@ -1,0 +1,9 @@
+[
+  {
+    "objectID": "code/index.html",
+    "href": "code/index.html",
+    "title": "toc",
+    "section": "",
+    "text": "toc\n\npseudobulks\nsetup\n\nadd core-level metadata\nwrite polygons to .parquet\nformat into SingleCellExperiment\nnegative & false codes as altExps\n\nfiltering\n\nbased on cell-level metrics\n& distance to FOV borders\n\nsignatures\n\nMSigDB, in-house, public\n& pan-cancer T cell atlas\n\nsignaling\n\nusing COMMOT\n\nclustering\n\nsemi-supervised for all but stromal\nsplit into NK/T, myeloid stromal & tumor cells\n\nsubclustering\n\nsemi-supervised for all but stromal\nsubset-specific feature selection\n\ncontexts\n\ncluster cells based on composition\nof 20um radial neighborhoods\n\nprocessing\n\npooling of all previousresults\ndimensionality reduction (joint & split)\n\nEDA signatures\nEDA signaling"
+  }
+]

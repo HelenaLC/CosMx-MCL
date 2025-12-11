@@ -1,7 +1,6 @@
 arch/
 meta/
 plts/
-docs/
 /.quarto/
 outs/*rds
 data/ref/*
