@@ -97,10 +97,9 @@ t(sapply(cs, \(.) table(ns[.]))); table(ns)
 
 ::: {.panel-tabset}
 
-```{r plt-xy, results="asis", fig.align="default", fig.width=10, fig.height=3}
+```{r plt-xy, results="asis", fig.dpi=100, fig.width=10, fig.height=3}
 idx <- split(colnames(sce), sce$sid)
-pol <- "pol.parquet")
-pol <- read_parquet(pol, as_data_frame=FALSE)
+pol <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
 pal <- list(lv1=.pal_sub, lv2=.pal_kid, ctx=.pal_ctx)
 pal <- lapply(pal, \(.) scale_fill_manual(drop=FALSE, values=.))
 for (. in names(pal)) sce[[.]] <- factor(sce[[.]])

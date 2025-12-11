@@ -87,6 +87,7 @@ table(sub$sid <- paste0(sub$pid, sub$roi, sub$typ, sub$gid), sub$typ)
 
 ```{r save-data}
 saveRDS(sub, "outs/raw.rds")
+write_parquet(at, "outs/pol.parquet")
 ```
 
 ::: {.callout-note icon=false, collapse=true}
