@@ -2,35 +2,26 @@
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-OUT <- file.path(DIR, "outs")
-```
-
-### deps
-
-```{r deps, message=FALSE, warning=FALSE}
+```{r load-deps, message=FALSE, warning=FALSE}
 library(scran)
 library(scater)
 library(scuttle)
 library(BiocParallel)
 library(SingleCellExperiment)
+source("code/_utils.R")
 bp <- MulticoreParam(8)
 ```
 
-### loading
+## loading
 
 ```{r load-data}
-sce <- readRDS(file.path(OUT, "fil.rds"))
-sig <- readRDS(file.path(OUT, "sig.rds"))
-ccc <- readRDS(file.path(OUT, "ccc.rds"))
-ctx <- readRDS(file.path(OUT, "ctx.rds"))
-fqs <- readRDS(file.path(OUT, "fqs.rds"))
-ist <- readRDS(file.path(OUT, "lv1.rds"))
-jst <- readRDS(file.path(OUT, "lv2.rds"))
+sce <- readRDS("outs/fil.rds")
+sig <- readRDS("outs/sig.rds")
+ccc <- readRDS("outs/ccc.rds")
+ctx <- readRDS("outs/ctx.rds")
+fqs <- readRDS("outs/fqs.rds")
+ist <- readRDS("outs/lv1.rds")
+jst <- readRDS("outs/lv2.rds")
 ```
 
 ### wrangling
@@ -94,7 +85,7 @@ rowData(sce) <- cbind(rowData(sce), sel)
 ### save data
 
 ```{r save-data}
-saveRDS(sce, file.path(OUT, "pro.rds"))
+saveRDS(sce, "outs/pro.rds")
 ```
 
 ::: {.callout-note icon=false, collapse=true}

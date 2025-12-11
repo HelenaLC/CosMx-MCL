@@ -3,6 +3,8 @@
 ## preamble
 
 ```{r load-deps, message=FALSE, warning=FALSE}
+library(scran)
+library(scuttle)
 library(SingleCellExperiment)
 source("code/_utils.R")
 ```
@@ -102,15 +104,14 @@ sub <- sce[, sce$lv1 == "nkt"]
 
 ```{r mgs-mye, fig.width=9, fig.height=3}
 gs <- list(
-    AML=c(),
-    mye=c(),  
+    AML=c(), 
     DC=c("CLEC9A", "CLEC10A", "LAMP3", "IDO1", "XCR1",
         "HLA-DPA1", "HLA-DPB1", "HLA-DQB1"),
     pDC=c("IRF8", "IRF7", "CR2", "FCRL2", "FCRL5", "CLEC4C"),
-    mac.pi=c("CD68", "APOE", "MMP9", "MMP12", "MMP14", "ITGAX")
+    mac.pi=c("CD68", "APOE", "MMP9", "MMP12", "MMP14", "ITGAX"),
     TAM=c("SELENOP", "CD14", "CD163", "C1QA", "C1QB", "C1QC", "CTSB"),
     mono.nc=c("FCER1G", "B2M", "AIF1", "BLVRB"),
-    mono.c=c("FBP1", "PCK2", "LYZ"),
+    mono.c=c("FBP1", "PCK2", "LYZ")
 )
 sub <- sce[, sce$lv1 == "mye"]
 .plt_dp(sub, "lv2", gs)
@@ -137,12 +138,16 @@ sub <- sce[, sce$lv1 == "str"]
 
 :::
 
+## tumor
+
 ```{r fig.width=8, fig.height=3}
 #| code-fold: true
+# restrict to tumor
 sig <- altExp(sce, "UCell")
 sel <- rowData(sig)$typ != "t-atlas"
-sub <- sig[sel, sig$lv1 == "tum"]
-xs <- seq(-(dx <- 0.01), 1+dx, dx*2)
+sub <- sig[sel, sig$lv2 == "tum"]
+# average by bin
+xs <- seq(-(dx <- 0.05), 1+dx, dx*2)
 fq <- cut(.q(sub$fqs$tum), breaks=xs)
 fq <- xs[as.integer(fq)]+dx
 fq <- factor(fq, sort(unique(fq)))
@@ -150,20 +155,24 @@ mu <- aggregateAcrossCells(sub,
     ids=fq, statistics="mean",
     use.assay.type=assayNames(sub)[1])
 df <- data.frame(fq=mu$ids, t(assay(mu)), check.names=FALSE)
+# scale across bins
 fd <- df |>
     pivot_longer(-fq) |>
     group_by(name) |>
     mutate_at("value", .z)
+# order by peak
 yo <- fd |>
     group_by(name) |>
     slice_max(value, with_ties=FALSE) |>
     arrange(fq, value) |>
     pull(name) |> rev()
-ggplot(fd, aes(fq, name, fill=value)) + geom_tile() + 
+# plotting
+ggplot(fd, aes(fq, name, fill=value)) +
+    geom_tile() + 
     scale_fill_gradientn(
         "z-scaled\nmean score",
-        limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2),
-        colors=rev(pals::brewer.puor(9))) +
+        colors=rev(pals::brewer.puor(9)),
+        limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
     labs(x="tumor density", y=NULL) +
     coord_equal(2/3, expand=FALSE) + 
     scale_y_discrete(limits=yo) +

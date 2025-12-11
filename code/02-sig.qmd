@@ -38,7 +38,7 @@ df <- read.csv("data/sig/tum.csv")
 df <- split(df, df$cluster)
 gt <- lapply(df, \(fd) {
     o <- order(fd$avg_log2FC)
-    tail(fd$gene[o], 50)
+    tail(fd$gene[o], 200)
 })
 rd <- append(rd, rep("tumor", length(gt)))
 names(gt) <- c(

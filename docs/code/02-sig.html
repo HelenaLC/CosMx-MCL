@@ -4920,7 +4920,7 @@ altExpNames(2): Negative SystemControl</code></pre>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">split</span>(df, df<span class="sc">$</span>cluster)</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>gt <span class="ot">&lt;-</span> <span class="fu">lapply</span>(df, \(fd) {</span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    o <span class="ot">&lt;-</span> <span class="fu">order</span>(fd<span class="sc">$</span>avg_log2FC)</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tail</span>(fd<span class="sc">$</span>gene[o], <span class="dv">50</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tail</span>(fd<span class="sc">$</span>gene[o], <span class="dv">200</span>)</span>
 <span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>})</span>
 <span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>rd <span class="ot">&lt;-</span> <span class="fu">append</span>(rd, <span class="fu">rep</span>(<span class="st">&quot;tumor&quot;</span>, <span class="fu">length</span>(gt)))</span>
 <span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(gt) <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
@@ -4931,15 +4931,15 @@ altExpNames(2): Negative SystemControl</code></pre>
 <span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>gs <span class="ot">&lt;-</span> <span class="fu">append</span>(gs, gt)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                 Quiescent              SOX11 network 
-                        50                         50 
+                       173                        200 
   Immediate-early response               Memory/nnMCL 
-                        50                         50 
+                       200                        184 
  Reactivated memory B cell             Pre/Pro B cell 
-                        50                         50 
+                       200                        200 
                MYC pathway BCR signaling/NFKB pathway 
-                        50                         50 
+                       200                        200 
                    S-Phase                       G2/M 
-                        50                         50 </code></pre>
+                       200                        200 </code></pre>
 </div>
 </div>
 </section>
@@ -5031,13 +5031,13 @@ GAVISH_3CA_METAPROGRAM_B_CELLS_CELL_CYCLE
 <span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">original=</span><span class="fu">summary</span>(<span class="fu">sapply</span>(gt, length)), </span>
 <span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">in_panel=</span><span class="fu">summary</span>(<span class="fu">sapply</span>(gs, length)))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>        original  in_panel
-Min.         5.0   5.00000
-1st Qu.     14.0  13.00000
-Median      31.0  21.00000
-Mean        50.4  34.35385
-3rd Qu.     50.0  37.00000
-Max.       384.0 310.00000</code></pre>
+<pre><code>         original  in_panel
+Min.      5.00000   5.00000
+1st Qu.  14.00000  13.00000
+Median   31.00000  23.00000
+Mean     72.81538  45.26154
+3rd Qu. 118.00000  64.00000
+Max.    384.00000 310.00000</code></pre>
 </div>
 </div>
 </section>
