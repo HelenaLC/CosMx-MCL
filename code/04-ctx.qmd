@@ -190,7 +190,7 @@ wrap_plots(ps) & coord_equal(20, expand=FALSE)
 ```{r plt-fq, fig.width=7, fig.height=3}
 #| code-fold: true
 cd <- colData(sce)[c("lv2")]
-df <- data.frame(fq)
+df <- data.frame(fq, cd)
 fd <- pivot_longer(df, -names(cd))
 mu <- fd |>
     group_by(lv2, name) |>
@@ -222,8 +222,8 @@ plot_layout(guides="collect") &
 ### save data
 
 ```{r save-data}
-saveRDS(fq, "outs/fqs.rds"))
-saveRDS(ns, "outs/ctx.rds"))
+saveRDS(fq, "outs/fqs.rds")
+saveRDS(ns, "outs/ctx.rds")
 ```
 
 ::: {.callout-note icon=false, collapse=true}

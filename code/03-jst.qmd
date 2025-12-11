@@ -153,38 +153,41 @@ sapply(kst, \(.) table(.$clust, exclude=NULL))
 ```
 
 ```{r pbs}
-kid <- lapply(kst, \(.) .$clust)
-idx <- names(kid <- unlist(unname(kid)))
-kid <- kid[match(colnames(sce), idx)]
-pbs <- aggregateAcrossCells(sce, kid[idx])
-pbs <- logNormCounts(pbs)
+kid <- unlist(unname(lapply(kst, \(.) .$clust)))
+pbs <- aggregateAcrossCells(
+    x=logNormCounts(sce), ids=kid[colnames(sce)],
+    statistics="mean", use.assay.type="logcounts")
 ```
 
-```{r plt-pbs, fig.width=24, fig.height=6}
+```{r plt-pbs, fig.width=28, fig.height=4}
 #| code-fold: true
-n <- 7
+# selection
+n <- 10
 ks <- colnames(pbs)
 es <- logcounts(pbs)
 gs <- lapply(ks, \(i) {
     j <- setdiff(ks, i)
-    fc <- apply(es[, j], 2, \(.) es[, i]/.)
-    fc <- rowMins(fc)
+    fc <- es[,i]/rowMeans(es[,j])
     names(tail(sort(fc), n))
-}) |> unlist() 
-mx <- .z(t(es[gs, ]))
+})
+# remove duplicates
+for (. in seq_along(gs)[-1])
+    gs[[.]] <- setdiff(gs[[.]], unlist(gs[seq(.-1)]))
+# wrangling
+ns <- sapply(gs, length)
+mx <- .z(t(es[gs <- unlist(gs), ]))
 pal <- setNames(.pal_kid[seq_along(ks)], ks)
-pheatmap::pheatmap(mx, annotation_legend=FALSE,
-    legend=FALSE, show_colnames=TRUE,
+# plotting
+pheatmap::pheatmap(mx, 
+    cutree_rows=5, cutree_cols=5,
     treeheight_row=5, treeheight_col=5,
     fontsize=8, cellwidth=8, cellheight=8,
+    legend=FALSE, annotation_legend=FALSE,
     cluster_rows=FALSE, cluster_cols=FALSE,
     color=pals::coolwarm(), border_color=NA,
-    gaps_col=cumsum(rep(n, length(ks))),
-    annotation_colors=list(x=pal),
-    annotation_names_col=FALSE,
-    annotation_col=data.frame(
-        row.names=gs,
-        x=rep(colnames(pbs), each=n)))
+    show_colnames=TRUE, gaps_col=cumsum(ns),  
+    annotation_colors=list(x=pal), annotation_names_col=FALSE,
+    annotation_col=data.frame(row.names=gs, x=rep.int(colnames(pbs), ns)))
 ```
 
 ## appendix
