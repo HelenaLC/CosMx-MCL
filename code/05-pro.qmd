@@ -1,0 +1,109 @@
+# pro
+
+## preamble
+
+### setup
+
+```{r dirs, message=FALSE, warning=FALSE}
+source("_utils.R")
+DIR <- dirname(getwd())
+OUT <- file.path(DIR, "outs")
+```
+
+### deps
+
+```{r deps, message=FALSE, warning=FALSE}
+library(scran)
+library(scater)
+library(scuttle)
+library(BiocParallel)
+library(SingleCellExperiment)
+bp <- MulticoreParam(8)
+```
+
+### loading
+
+```{r load-data}
+sce <- readRDS(file.path(OUT, "fil.rds"))
+sig <- readRDS(file.path(OUT, "sig.rds"))
+ccc <- readRDS(file.path(OUT, "ccc.rds"))
+ctx <- readRDS(file.path(OUT, "ctx.rds"))
+fqs <- readRDS(file.path(OUT, "fqs.rds"))
+ist <- readRDS(file.path(OUT, "lv1.rds"))
+jst <- readRDS(file.path(OUT, "lv2.rds"))
+```
+
+### wrangling
+
+```{r prep-data}
+idx <- names(kid <- ist$clust)
+sce$lv1 <- kid[match(colnames(sce), idx)]
+kid <- lapply(jst, \(.) .$clust)
+idx <- names(kid <- unlist(unname(kid)))
+sce$lv2 <- kid[match(colnames(sce), idx)]
+colData(sce)$fqs <- fqs[colnames(sce), ]
+sce$ctx <- ctx[colnames(sce)]
+colData(sig) <- colData(sce)
+colData(ccc) <- colData(sce)
+altExp(sce, "UCell") <- sig
+altExp(sce, "COMMOT") <- ccc
+```
+
+## processing
+
+```{r pro-joint}
+set.seed(251206)
+sce <- logNormCounts(sce)
+tbl <- modelGeneVar(sce)
+sel <- getTopHVGs(tbl, n=2e3)
+sel <- rownames(sce) %in% sel
+rowData(sce)$sel <- sel
+sce <- runPCA(sce, subset_row=sel)
+sce <- runUMAP(sce, dimred="PCA", n_dimred=20)
+```
+
+```{r pro-split}
+set.seed(251207)
+idx <- split(colnames(sce), sce$lv1)
+names(ids) <- ids <- names(idx)
+lys <- bplapply(ids, \(.) {
+    sel <- rownames(jst[[.]]$profiles)
+    sel <- rownames(sce) %in% sel
+    rowData(sce)[[.]] <- sel
+    sce <- runPCA(sce[, idx[[.]]], subset_row=sel)
+    runUMAP(sce, dimred="PCA", n_dimred=10)
+}, BPPARAM=bp)
+```
+
+```{r pro-pool}
+# stash split reductions
+for (a in c("PCA", "UMAP")) {
+    b <- switch(a, PCA="PCB", "UMAQ")
+    dr <- lapply(lys, reducedDim, a)
+    dr <- do.call(rbind, dr)
+    dr <- dr[colnames(sce), ]
+    reducedDim(sce, b) <- dr
+}
+# stash feature selections
+sel <- sapply(ids, \(.) rowData(lys[[.]])[[.]])
+rowData(sce) <- cbind(rowData(sce), sel)
+```
+
+## appendix
+
+### save data
+
+```{r save-data}
+saveRDS(sce, file.path(OUT, "pro.rds"))
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

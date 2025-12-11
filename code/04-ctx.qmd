@@ -1,0 +1,251 @@
+# ctx
+
+## preamble
+
+### setup
+
+```{r dirs, message=FALSE, warning=FALSE}
+source("_utils.R")
+DIR <- dirname(getwd())
+DAT <- file.path(DIR, "data")
+OUT <- file.path(DIR, "outs")
+```
+
+### deps
+
+```{r deps, message=FALSE, warning=FALSE}
+library(RANN)
+library(arrow)
+library(dplyr)
+library(tidyr)
+library(cluster)
+library(circlize)
+library(BiocParallel)
+library(ComplexHeatmap)
+library(SingleCellExperiment)
+bp <- MulticoreParam(3)
+```
+
+### loading
+
+```{r load-data}
+sce <- readRDS(file.path(OUT, "fil.rds"))
+ist <- readRDS(file.path(OUT, "lv1.rds"))
+jst <- readRDS(file.path(OUT, "lv2.rds"))
+```
+
+## labeling
+
+```{r lab}
+sce$lv1 <- (kid <- ist$clust)[match(colnames(sce), names(kid))]
+kid <- unlist(unname(lapply(jst, \(.) .$clust)))
+idx <- match(colnames(sce), names(kid))
+table(sce$lv2 <- kid[idx], exclude=NULL)
+```
+
+## neighborhoods
+
+```{r nns}
+cs <- split(colnames(sce), sce$sid)
+names(id) <- id <- names(cs)
+r <- 0.02; k <- 101
+# get radial neighborhood
+is <- lapply(id, \(sid) {
+    sub <- sce[, cs[[sid]]]
+    xy <- "Center(X|Y)_global_mm"
+    xy <- grep(xy, names(colData(sub)))
+    xy <- as.matrix(colData(sub)[xy])
+    nn <- nn2(xy, searchtype="radius", r=r, k=k)
+    is <- nn$nn.idx[, -1]; is[is == 0] <- NA; is
+})
+```
+
+```{r plt-ns, fig.width=7, fig.height=3.5}
+#| code-fold: true
+#| echo: -1
+par(mar=c(4,4,2,2))
+n <- unlist(lapply(is, \(.) rowSums(!is.na(.))))
+l <- sprintf("#cells in %sum radial neighborhood", r*1e3)
+hist(n, breaks=seq(-.5, max(n)+.5), xlab="", ylab="",  main=l)
+abline(v=quantile(n, c(.05, .95)), col="red", lw=2, lty=2)
+abline(v=m <- mean(n), col="red", lw=2); m
+```
+
+## composition
+
+```{r fqs}
+# quantify each neighborhood's
+# subpopulation composition
+fq <- lapply(id, \(.) {
+    ks <- (se <- sce[, cs[[.]]])$lv2
+    ks[is.na(ks)] <- "tum"
+    mx <- matrix(ks[is[[.]]], nrow=ncol(se))
+    mx[is.na(mx)] <- ""
+    names(kt) <- kt <- unique(ks)
+    ns <- sapply(kt, \(k) rowSums(mx == k))
+    data.frame(
+        prop.table(ns, 1),
+        row.names=colnames(se))
+}) |> bind_rows(); fq[is.na(fq)] <- 0
+```
+
+## clustering
+
+```{r clu}
+set.seed(251210)
+km <- kmeans(fq, centers=k <- 10)$cluster
+ns <- sprintf("%02d", seq_len(k))
+ns <- factor(km, labels=paste0("N", ns))
+```
+
+## visuals
+
+```{r tbl}
+sce$ctx <- ns[match(colnames(sce), names(ns))]
+t(sapply(cs, \(.) table(ns[.]))); table(ns)
+```
+
+### spatial
+
+::: {.panel-tabset}
+
+```{r plt-xy, results="asis", fig.align="default", fig.width=10, fig.height=3}
+idx <- split(colnames(sce), sce$sid)
+pol <- file.path(OUT, "pol.parquet")
+pol <- read_parquet(pol, as_data_frame=FALSE)
+pal <- list(lv1=.pal_sub, lv2=.pal_kid, ctx=.pal_ctx)
+pal <- lapply(pal, \(.) scale_fill_manual(drop=FALSE, values=.))
+for (. in names(pal)) sce[[.]] <- factor(sce[[.]])
+for (i in names(idx)) {
+    se <- sce[, idx[[i]]]
+    ps <- lapply(names(pal), \(j) {
+        id <- if (j == names(pal)[2]) i
+        .plt_ps(pol, se, j, id=id, lw=0.1, lc="white") + pal[[j]]
+    })
+    gg <- wrap_plots(ps, nrow=1) & theme(plot.margin=margin(r=5))
+    cat("####", i, "\n"); print(gg); cat("\n\n")
+}
+```
+
+:::
+
+### nn hm
+
+```{r plt-hm, fig.width=5, fig.height=5.5}
+#| code-fold: true
+cd <- colData(sce)[c("lv2")]
+df <- data.frame(cd, fq)
+mu <- df |>
+    group_by(lv2) |>
+    summarise(
+        across(where(is.numeric),
+        \(.) mean(., na.rm=TRUE)))
+# scaling
+mv <- mu |>
+    pivot_longer(-lv2) |>
+    group_by(name) |> 
+    mutate_at("value", .z)
+# wrangling
+mx <- pivot_wider(mv)
+my <- as.matrix(mx[, -1])
+rownames(my) <- mx[[1]]
+# plotting
+lab <- "z-scaled frequency of X in radial neighborhood of Y"
+pal <- colorRamp2(c(-2.5, 0, 2.5), c("navy", "ivory", "maroon"))
+set.seed(3); hm <- Heatmap(my, pal, name=lab,
+    row_title=NULL, 
+    column_title=NULL,
+    width=unit(10, "cm"), 
+    height=unit(10, "cm"),
+    km=10, column_km=10,
+    row_dend_width=unit(0.5, "cm"),
+    column_dend_height=unit(0.5, "cm"),
+    heatmap_legend_param=list(
+        direction="horizontal",
+        grid_height=unit(2, "mm"),
+        legend_width=unit(4, "cm"),
+        at=. <- seq(-2.5, 2.5, 0.5),
+        title_position="topcenter",
+        labels=ifelse(. %% 2 == 0, ., "")))
+draw(hm, heatmap_legend_side="top")
+```
+
+### fq by sid
+
+```{r plt-fq-sid, fig.width=5, fig.height=3}
+#| code-fold: true
+ps <- list(
+    .plt_fq(sce, "ctx", "sid") + scale_fill_manual(values=.pal_sid),
+    .plt_fq(sce, "sid", "ctx") + scale_fill_manual(values=.pal_ctx))
+wrap_plots(ps) & coord_equal(20, expand=FALSE)
+```
+
+### fq by lv1
+
+```{r plt-fq-lv1, message=FALSE, fig.width=5, fig.height=3}
+#| code-fold: true
+ps <- list(
+    .plt_fq(sce, "ctx", "lv1") + scale_fill_manual(values=.pal_sub),
+    .plt_fq(sce, "lv1", "ctx") + scale_fill_manual(values=.pal_ctx))
+wrap_plots(ps) & coord_equal(20, expand=FALSE)
+```
+
+### fq by lv2
+
+```{r plt-fq-lv2, message=FALSE, fig.width=5, fig.height=3}
+#| code-fold: true
+ps <- list(
+    .plt_fq(sce, "ctx", "lv2") + scale_fill_manual(values=.pal_kid),
+    .plt_fq(sce, "lv2", "ctx") + scale_fill_manual(values=.pal_ctx))
+wrap_plots(ps) & coord_equal(20, expand=FALSE)
+```
+
+```{r plt-fq, fig.width=7, fig.height=3}
+#| code-fold: true
+cd <- colData(sce)[c("lv2")]
+df <- data.frame(fq)
+fd <- pivot_longer(df, -names(cd))
+mu <- fd |>
+    group_by(lv2, name) |>
+    mutate_at("name", factor) |>
+    summarize_at("value", mean)
+mv <- filter(mu, name != "tum")
+xo <- mu |>
+    filter(name == "tum") |>
+    arrange(value) |> 
+    pull(lv2)
+ggplot(mu, aes(lv2, value, fill=name)) + 
+    ggtitle("cells in radial neighborhood of x") +
+ggplot(mv, aes(lv2, value, fill=name)) + 
+    ggtitle("excluding tumor fraction") +
+plot_layout(guides="collect") &
+    geom_col(position="fill", key_glyph="point", show.legend=TRUE) &
+    scale_fill_manual(NULL, drop=FALSE, values=.pal_kid) &
+    scale_x_discrete(limits=xo) &
+    .thm_fig_d("minimal", "f") & 
+    coord_equal(expand=FALSE) &
+    theme(aspect.ratio=2/3,
+        axis.title=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+```
+
+## appendix
+
+### save data
+
+```{r save-data}
+saveRDS(fq, file.path(OUT, "fqs.rds"))
+saveRDS(ns, file.path(OUT, "ctx.rds"))
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

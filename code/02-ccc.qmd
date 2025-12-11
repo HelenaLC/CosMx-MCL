@@ -1,0 +1,152 @@
+# ccc
+
+## preamble
+
+### setup
+
+```{r dirs, message=FALSE, warning=FALSE}
+source("_utils.R")
+DIR <- dirname(getwd())
+OUT <- file.path(DIR, "outs")
+DAT <- file.path(DIR, "data", "sig")
+```
+
+### deps
+
+```{r deps, message=FALSE, warning=FALSE}
+library(Matrix)
+library(scater)
+library(reticulate)
+library(BiocParallel)
+library(zellkonverter)
+library(SingleCellExperiment)
+bp <- MulticoreParam(8)
+# activate conda environment
+bin <- "~/software/mambaforge/bin"
+use_python(file.path(bin, "python"))
+use_condaenv("commot", file.path(bin, "conda"))
+```
+
+### data
+
+```{r data}
+sce <- readRDS(file.path(OUT, "fil.rds"))
+```
+
+```{r prep}
+# wrangling
+xy <- grep("global_mm$", names(colData(sce)))
+xy <- as.matrix(colData(sce)[xy])
+reducedDim(sce, "spatial") <- xy
+sce <- logNormCounts(sce)
+```
+
+## analysis
+
+### setup
+
+```{r ccc-set}
+# dependencies
+ad <- import("anndata")
+ct <- import("commot")
+pd <- import("pandas")
+
+# retrieve interactions from 'CellChatDB'
+db <- ct$pp$ligand_receptor_database(
+    species="human", 
+    database="CellChat", 
+    signaling_type=NULL)
+names(db) <- c(
+    "ligand", "receptor", 
+    "pathway", "type")
+nrow(db)
+
+# filter for interactions
+# fully covered by panel
+db <- db[apply(db, 1, \(.) {
+    rs <- strsplit(.["receptor"], "_")
+    lr <- c(.["ligand"], unlist(rs))
+    all(lr %in% rownames(sce))
+}), ]
+nrow(db)
+
+# subset to features being considered
+rs <- sapply(strsplit(db$receptor, "_"), .subset, 1)
+nrow(sub <- sce[unique(c(db$ligand, rs)), ])
+```
+
+### inference
+
+```{r ccc-run}
+set.seed(251205)
+bo <- bpoptions(progressbar=TRUE)
+cs <- split(colnames(sce), sce$fov)
+sr <- bplapply(
+    BPPARAM=bp, BPOPTIONS=bo, 
+    names(cs), \(f) {
+        tryCatch(error=\(e) e, {
+            ad <- SCE2AnnData(
+                sce=sub[, cs[[f]]], 
+                X_name="logcounts")
+            ct$tl$spatial_communication(ad,
+                dis_thr=0.02,  
+                df_ligrec=db,
+                heteromeric=TRUE,
+                pathway_sum=TRUE,
+                database_name="foo",
+                heteromeric_rule="min",
+                heteromeric_delimiter="_")
+            list(
+                ad$obsm["commot-foo-sum-sender"], 
+                ad$obsm["commot-foo-sum-receiver"])
+        })
+    })
+er <- sapply(sr, inherits, "error")
+ex <- sapply(sr, is.null)
+table(na <- er | ex)
+sr <- sr[!na]
+```
+
+### wrangling
+
+```{r post}
+# reformatting
+i <- colnames(sce)
+s <- lapply(sr, \(.) .[[1]])
+r <- lapply(sr, \(.) .[[2]])
+s <- do.call(rbind, unname(s))
+r <- do.call(rbind, unname(r))
+res <- list(s=s[i, ], r=r[i, ])
+res <- lapply(res, \(.) {
+    mtx <- as(as.matrix(.), "dgCMatrix")
+    nms <- gsub("^(s|r)-", "", colnames(.))
+    `colnames<-`(mtx, nms)
+})
+# more reformatting
+res <- SingleCellExperiment(
+    assays=lapply(res, t), 
+    colData=colData(sce))
+typ <- ifelse(grepl("-", rownames(res)), "lr", "pw")
+typ[grep("total", rownames(res))] <- "tt"
+rowData(res) <- data.frame(typ)
+res
+```
+
+## appendix
+
+### saving
+
+```{r save}
+saveRDS(res, file.path(OUT, "ccc.rds"))
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

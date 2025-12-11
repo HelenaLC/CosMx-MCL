@@ -1,0 +1,101 @@
+# raw
+
+## preamble
+
+```{r load-deps, message=FALSE, warning=FALSE}
+library(arrow)
+library(dplyr)
+library(Matrix)
+library(SparseArray)
+library(SingleCellExperiment)
+source("code/_utils.R")
+```
+
+```{r help}
+# add local & global coordinates in mm
+.mm <- \(df, px=".*_(local|global)_(px)") {
+    px <- grep(px, names(df))
+    mm <- sapply(df[px], .px2mm)
+    nm <- gsub("px$", "mm", colnames(mm))
+    colnames(mm) <- nm; cbind(df, mm)
+}
+```
+
+## loading
+
+```{r load-data}
+# construct SCE from transcript counts & cell metadata
+cd <- .mm(read.csv("data/raw/metadata.csv"))
+mx <- readSparseCSV("data/raw/counts.csv", transpose=TRUE)
+my <- `colnames<-`(as(mx[-1, ], "dgCMatrix"), cd$cell)
+(sce <- SingleCellExperiment(list(counts=my), colData=cd))
+```
+
+## wrangling
+
+### non-target
+
+```{r alt}
+# move negative probe & blank code data to 'altExps'
+names(gs) <- gs <- c("Negative", "SystemControl")
+gs <- lapply(gs, grep, rownames(sce))
+altExps(sce) <- lapply(gs, \(.) sce[., ])
+sce <- sce[-unlist(gs), ]
+sapply(gs, length)
+```
+
+### metadata
+
+```{r map}
+# add core-level metadata
+md <- read.csv("data/raw/mapping.csv")
+md <- md[md$biopsy_site != "TO", ]
+sub <- sce[, sce$fov %in% md$fov]
+i <- match(sub$fov, md$fov)
+j <- setdiff(names(md), names(colData(sub)))
+colData(sub) <- cbind(colData(sub), md[i, j])
+cat("genes: ", nrow(sub), "; ", sep="", 
+    "cells: ", ncol(sub), "/", ncol(sce))
+```
+
+### polygons
+
+```{r pol}
+# prepare polygons
+pol <- read.csv("data/raw/polygons.csv")
+pol <- filter(pol, cell %in% colnames(sub))
+at <- arrow_table(.mm(pol))
+```
+
+### identifiers
+
+```{r ids}
+# streamline identifiers
+foo <- c(n="MCLN", m="MCLMZ", d="MCLD")
+ns <- rowSums(tbl <- table(sub$core, sub$roi) > 1)
+ns <- lapply(ns, \(.) if (. == 1) 0 else seq(.))
+sub$roi <- factor(unlist(ns)[match(sub$roi, colnames(tbl))])
+sub$gid <- factor(sub$pathology, foo, names(foo))
+sub$pid <- factor(sprintf("%02d", as.integer(factor(sub$core))))
+sub$typ <- factor(ifelse((. <- sub$biopsy_site) == "EYE", "EY", .))
+table(sub$sid <- paste0(sub$pid, sub$roi, sub$typ, sub$gid), sub$typ)
+```
+
+## appendix
+
+### saving
+
+```{r save-data}
+saveRDS(sub, "outs/raw.rds")
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

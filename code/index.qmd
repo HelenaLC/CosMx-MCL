@@ -1,0 +1,31 @@
+# toc
+
+- [pseudobulks](00-ref.qmd)
+- [setup](00-raw.qmd)
+  - add core-level metadata
+  - write polygons to *.parquet*
+  - format into `SingleCellExperiment`
+  - negative & false codes as `altExps`
+- [filtering](01-fil.qmd)
+  - based on cell-level metrics  
+    & distance to FOV borders
+- [signatures](02-sig.qmd)
+  - MSigDB, in-house, public  
+    & pan-cancer T cell atlas
+- [signaling](02-ccc.qmd)
+  - using `COMMOT`
+- [clustering](02-ist.qmd)
+  - semi-supervised for all but stromal
+  - split into NK/T, myeloid stromal & tumor cells
+- [subclustering](03-jst.qmd)
+  - semi-supervised for all but stromal
+  - subset-specific feature selection
+- [contexts](04-ctx.qmd)
+  - cluster cells based on composition    
+    of 20um radial neighborhoods
+- [processing](05-pro.qmd)
+  - pooling of all previousresults
+  - dimensionality reduction (joint & split)
+- [EDA signatures](06-eda-sig.qmd)
+- [EDA signaling](06-eda-ccc.qmd)
+

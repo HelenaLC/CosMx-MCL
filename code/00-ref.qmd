@@ -1,0 +1,123 @@
+# ref
+
+## preamble
+
+```{r load-deps, message=FALSE, warning=FALSE}
+library(qs)
+library(Seurat)
+library(scuttle)
+library(SingleCellExperiment)
+source("code/_utils.R")
+```
+
+## loading
+
+```{r load-data}
+qs <- list.files("data/ref", "qs$", full.names=TRUE)
+names(qs) <- gsub("\\.qs", "", basename(qs))
+se <- lapply(qs, \(.) {
+    so <- qread(.)
+    se <- as.SingleCellExperiment(so)
+    logcounts(se) <- NULL
+    reducedDims(se) <- list()
+    gs <- VariableFeatures(so)
+    gs <- rownames(se) %in% gs
+    rowData(se)$hvg <- gs
+    se
+}); sapply(se, ncol)
+```
+
+## labeling
+
+```{r mye}
+old <- c("0","1","2","3","4","5","6","7","8","9","10","11")
+new <- c(
+    "Classical_monocytes", "Class. monocytes_HLA", 
+    "Non-class. monocytes", "Class. monocytes_SELL", 
+    "Class. monocytes_ribo", "DC2", "Class. monocytes_IFNresp", 
+    "pDC_1", "Progenitor cells", "Platelets", "pDC_2", "DC1")
+nev <- list(
+    mono.c=c("Classical_monocytes",
+        "Class. monocytes_SELL", "Class. monocytes_HLA",
+        "Class. monocytes_ribo", "Class. monocytes_IFNresp"),
+    mono.nc="Non-class. monocytes",
+    pDC=c("pDC_2", "pDC_1"),
+    DC=c("DC1", "DC2"))
+nev <- setNames(rep.int(names(nev), sapply(nev, length)), unlist(nev))
+lab <- new[match(se$mye$ident, old)]
+lab <- nev[match(lab, names(nev))]
+table(se$mye$lab <- lab, exclude=NULL)
+```
+
+```{r nkt}
+old <- c("0","1","2","3","4","5","6","7","8","9","11","12","13","14","15","17","18")
+new <- c(
+    "CD16pos NK","CD4 TCM TFH","TEMRA","CD4 TN","CD8 TPEX","CD4 TREG",
+    "CD4 TCM TH2","NK-like T","NK/ILC","CD8 TEX","CD4 TCM","CD8 TEM",
+    "CD16neg NK","CD8 TN","MAIT","Cycling T","IFN responding")
+nev <- list(
+    "NK/ILC"=c("CD16neg NK", "CD16pos NK", "NK ILC3"),
+    Tcm=c("CD4 TCM_TH2", "CD4 TCM"),
+    Tex=c("CD8 TPEX", "CD8 TEX"),
+    Tc=c("CD8 TEM", "TEMRA"),
+    Tfh="CD4 TCM TFH",
+    Treg="CD4 TREG",
+    Tp="Cycling T",
+    Thn="CD4 TN",
+    Tcn="CD8 TN")
+nev <- setNames(rep.int(names(nev), sapply(nev, length)), unlist(nev))
+lab <- new[match(se$nkt$ident, old)]
+lab <- nev[match(lab, names(nev))]
+table(se$nkt$lab <- lab, exclude=NULL)
+```
+
+## pooling
+
+```{r pool}
+gs <- Reduce(intersect, lapply(se, rownames))
+mx <- do.call(cbind, lapply(se, \(.) assay(.)[gs, ]))
+dim(mx <- normalizeCounts(mx, log=FALSE))
+```
+
+## profiles
+
+### low-res.
+
+```{r pbs-one}
+id <- rep.int(names(se), sapply(se, ncol))
+pb <- summarizeAssayByGroup(mx, id, statistics="mean")
+head(pb <- assay(pb))
+```
+
+### high-res.
+
+```{r pbs-two}
+qb <- lapply(se, \(.) {
+    if (is.null(id <- .$lab)) return()
+    cs <- colnames(.)[!(ex <- is.na(id))]
+    summarizeAssayByGroup(mx[, cs], id[!ex], statistics="mean")
+})
+qb <- qb[!sapply(qb, is.null)]
+qb <- lapply(qb, assay)
+sapply(qb, colnames)
+```
+
+## appendix
+
+### saving
+
+```{r save-data}
+saveRDS(pb, "outs/pbs.rds")
+saveRDS(qb, "outs/qbs.rds")
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

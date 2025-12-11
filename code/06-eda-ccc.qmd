@@ -1,0 +1,180 @@
+# ccc
+
+## preamble
+
+### setup
+
+```{r dirs, message=FALSE, warning=FALSE}
+source("_utils.R")
+DIR <- dirname(getwd())
+OUT <- file.path(DIR, "outs")
+```
+
+### deps
+
+```{r deps, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(SingleCellExperiment)
+```
+
+### loading
+
+```{r load}
+sce <- readRDS(file.path(OUT, "pro.rds"))
+(sce <- altExp(sce, "COMMOT"))
+```
+
+## pws
+
+```{r pws}
+x <- sce[rowData(sce)$typ == "pw", ]
+y <- as.matrix(Reduce(`+`, assays(x))/2)
+df <- data.frame(colData(sce), t(y), check.names=FALSE)
+```
+
+### by ctx
+
+```{r pws-ctx}
+mu <- df |>
+    pivot_longer(all_of(rownames(y))) |>
+    group_by(name, ctx) |>
+    summarize_at("value", mean)
+mv <- mu |>
+    group_by(name) |>
+    mutate_at("value", .z)
+```
+
+```{r pws-ctx-hm, fig.width=12, fig.height=9}
+#| code-fold: true
+my <- as.matrix((mx <- pivot_wider(mu))[, -1])
+names(ns) <- ns <- rownames(my) <- mx[[1]]
+gs <- lapply(ns, \(i) {
+    j <- setdiff(ns, i)
+    fc <- my[i, ]/colMeans(my[j, ])
+    names(tail(sort(fc), 40))
+})
+ps <- lapply(names(gs), \(.) {
+    fd <- filter(mv, name %in% gs[[.]])
+    mx <- pivot_wider(fd)
+    my <- as.matrix(mx[, -1])
+    rownames(my) <- mx[[1]]
+    ggplot(fd, aes(ctx, name, fill=value)) + 
+        geom_tile() + scale_fill_gradient2(
+            "z-scaled mean\nsignaling score",
+            limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2),
+            low="turquoise", mid="grey95", high="deeppink") +
+        scale_x_discrete(limits=.xo(my)) +
+        scale_y_discrete(limits=.yo(my)) +
+        coord_equal(2/3, expand=FALSE) + 
+        ggtitle(.) +
+        .thm_fig_c("minimal") + theme(
+            axis.title=element_blank(),
+            legend.key.width=unit(0.8, "lines"),
+            legend.key.height=unit(0.4, "lines"),
+            axis.text.y=element_text(size=6),
+            axis.text.x=element_text(size=8, angle=90, hjust=1, vjust=0.5))
+})
+wrap_plots(ps, nrow=2, guides="collect") & theme(legend.position="bottom")
+```
+
+### by kid
+
+```{r pws-kid}
+mu <- df |>
+    filter(!is.na(lv2)) |>
+    pivot_longer(all_of(rownames(y))) |>
+    group_by(name, lv2) |>
+    summarize_at("value", mean)
+mv <- mu |>
+    group_by(name) |>
+    mutate_at("value", .z)
+```
+
+```{r pws-kid-hm, fig.width=15, fig.height=10}
+#| code-fold: true
+my <- as.matrix((mx <- pivot_wider(mu))[, -1])
+names(ns) <- ns <- rownames(my) <- mx[[1]]
+gs <- lapply(ns, \(i) {
+    j <- setdiff(ns, i)
+    fc <- my[i, ]/colMeans(my[j, ])
+    names(tail(sort(fc), 10))
+})
+ps <- lapply(names(gs), \(.) {
+    fd <- filter(mv, name %in% gs[[.]])
+    mx <- pivot_wider(fd)
+    my <- as.matrix(mx[, -1])
+    rownames(my) <- mx[[1]]
+    ggplot(fd, aes(name, lv2, fill=value)) + 
+        geom_tile() + scale_fill_gradient2(
+            "z-scaled mean\nsignaling score",
+            limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2),
+            low="turquoise", mid="grey95", high="deeppink") +
+        scale_x_discrete(limits=.yo(my)) +
+        scale_y_discrete(limits=.xo(my)) +
+        coord_equal(2/3, expand=FALSE) + 
+        ggtitle(.) +
+        .thm_fig_c("minimal") + theme(
+            axis.title=element_blank(),
+            legend.key.width=unit(0.8, "lines"),
+            legend.key.height=unit(0.4, "lines"),
+            axis.text.y=element_text(size=6),
+            axis.text.x=element_text(size=8, angle=90, hjust=1, vjust=0.5))
+})
+wrap_plots(ps, nrow=3, guides="collect") & theme(legend.position="bottom")
+```
+
+```{r lrs, eval=FALSE, echo=FALSE}
+x <- sce[
+    rowData(sce)$typ == "lr" & 
+    !grepl("MHC", rownames(sce)), ]
+rownames(x) <- gsub("HLA-", "HLA.", rownames(x))
+x$kid <- paste(x$lv2)
+x$kid[x$kid %in% c("Th", "Thn")] <- "Th"
+x$kid[x$kid %in% c("NK/ILC", "Tcn")] <- "Tc"
+x$kid[grepl("FRC", x$kid)] <- "FRC"
+x$kid[grepl("^mo|mac", x$kid)] <- "mono"
+
+# average across cluster-level sender/receiver 
+# averages to obtain interaction scores
+ks <- expand.grid(ks <- unique(x$kid), ks)
+cs <- split(colnames(x), x$kid)
+ss <- strsplit(rownames(x), "-")
+l <- sapply(ss, .subset, 1)
+r <- sapply(ss, .subset, 2)
+df <- mapply(
+    i=ks[, 1], j=ks[, 2],
+    SIMPLIFY=FALSE, \(i, j) {
+        a <- x[, cs[[i]]]
+        b <- x[, cs[[j]]]
+        sr <- cbind(
+            rowMeans(assay(a, "s")),
+            rowMeans(assay(b, "r")))
+        data.frame(
+            score=rowMeans(sr),
+            ligand=l, receptor=r, 
+            source=paste(i), target=paste(j))
+    }) |> do.call(what=rbind)
+rownames(df) <- NULL
+head(df)
+```
+
+## appendix
+
+### save data
+
+```{r save-data}
+
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

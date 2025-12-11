@@ -1,0 +1,160 @@
+# fil
+
+## preamble
+
+### setup
+
+```{r dirs, message=FALSE, warning=FALSE}
+source("_utils.R")
+DIR <- dirname(getwd())
+DAT <- file.path(DIR, "data")
+OUT <- file.path(DIR, "outs")
+```
+
+```{r deps, message=FALSE, warning=FALSE}
+library(zoo)
+library(tidyr)
+library(dplyr)
+library(scuttle)
+library(ggplot2)
+library(patchwork)
+library(SingleCellExperiment)
+```
+
+```{r load-data}
+# drop problematic core
+sce <- readRDS(file.path(OUT, "raw.rds"))
+(sce <- sce[, sce$sid != "032LNd"])
+```
+
+## quality control
+
+### FOV borders
+
+```{r qc-fov}
+# exclude cells less than 'd' from any FOV border;
+# 'd' = third radius of an average (circular) cell
+ds <- .d2b(colData(sce))
+mm2 <- sce$Area.um2*1e-6
+th_d <- mean(sqrt(mm2/pi))/3
+ex_d <- rowAnys(ds < th_d)
+```
+
+### cell-level
+
+```{r qc-obs}
+# exclude low-quality cells based on total counts & detected features
+.f <- \(x, n=2.5, i=sce$sid) isOutlier(x, n, "lower", TRUE, batch=i)
+.g <- \(x) attr(x, "threshold")[1, ]
+
+th_n <- .g(ex_n <- .f(sce$nCount_RNA))
+th_m <- .g(ex_m <- .f(sce$nFeature_RNA))
+th_a <- .g(ex_a <- .f(sce$nCount_RNA/sce$Area.um2))
+```
+
+```{r ths}
+# stash thresholds
+ths <- data.frame(d=th_d*1e3, n=th_n, m=th_m, a=th_a)
+ths <- data.frame(row.names=NULL, sid=rownames(ths), ths)
+format(metadata(sce)$ths <- ths, digits=2)
+```
+
+## filtering
+
+```{r fil}
+# filtering
+ex <- cbind(ex_d, ex_n, ex_m, ex_a)
+sub <- sce[, !rowAnys(ex)]
+# percent excluded by each
+round(100*colMeans(ex), 2)
+# percent excluded overall
+round(100*ncol(sub)/ncol(sce), 2)
+# number of cells raw/fil
+c(ncol(sce), ncol(sub))
+# cell area statistics
+summary(sub$Area.um2)
+```
+
+## visuals
+
+```{r plt-fov, fig.width=8, fig.height=2}
+#| code-fold: true
+# wrangling
+cd <- data.frame(colData(sce))
+cd$cpa <- with(cd, nCount_RNA/Area.um2)
+df <- cbind(cd, d <- .d2b(cd)) |>
+    pivot_longer(all_of(colnames(d))) |>
+    mutate(value=value*1e3) |>
+    mutate(name=factor(name, 
+        c("t", "r", "b", "l"),
+        c("top", "right", "bottom", "left")))
+fd <- df |>
+    group_by(name, value) |>
+    summarise_at("cpa", mean) |>
+    arrange(value) |> group_by(name) |> mutate(
+        mu_x=rollmean(value, 20, mean, align="left", fill=0),
+        mu_y=rollmean(cpa, 20, mean, align="left", fill=0)) 
+mu <- data.frame(name=unique(fd$name), y=mean(cd$cpa))
+md <- metadata(sub)$ths |>
+    select(where(is.numeric)) |>
+    summarise(across(everything(), mean))
+
+# plotting
+dy <- ceiling(max(fd$mu_y)/0.1)*0.1
+ggplot(fd, aes(mu_x, mu_y)) +
+    facet_grid(~name) + geom_line(col="navy", linewidth=0.4) +
+    geom_vline(xintercept=md$d, col="red", linewidth=0.4, lty=2) +
+    geom_hline(yintercept=md$a, col="red", linewidth=0.4, lty=2) +
+    geom_hline(data=mu, aes(yintercept=y), col="blue", linewidth=0.4) +
+    scale_x_continuous("FOV border distance (um)", expand=expansion(0.04)) +
+    scale_y_continuous("RNA counts per um", n.breaks=3, expand=expansion(0.06)) +
+    theme(plot.title=element_text(hjust=0.5)) + .thm_fig("bw") +
+    coord_cartesian(xlim=c(0, 60), ylim=c(0, dy))
+```
+
+```{r plt-ns, fig.width=6, fig.height=3}
+#| code-fold: true
+ex <- !colnames(sce) %in% colnames(sub)
+df <- as.data.frame(table(sid=sce$sid, ex))
+p0 <- ggplot(df, aes(Freq, sid, fill=ex))
+p1 <- p0 + 
+    geom_col(position="fill", key_glyph="point") +
+    scale_x_continuous("% cells", n.breaks=6) +
+    .thm_fig_d("bw", "f") + theme(
+        panel.grid=element_blank())
+p2 <- p0 + 
+    geom_col(position="identity", key_glyph="point") + 
+    scale_x_continuous("# cells", limits=c(0, 1e4), n.breaks=6) +
+    geom_text(
+        aes(Inf, label=format(Freq, big.mark=",")),
+        filter(df, ex == FALSE), hjust=1.1, size=2) +
+    .thm_fig_d("bw", "f") + theme(
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.grid.major.y=element_blank())
+(p1+p2) + 
+    plot_layout(nrow=1, guides="collect") &
+    labs(y=NULL) & scale_fill_manual("excluded",
+        values=c("slategray1", "slategray")) &
+    coord_cartesian(expand=FALSE) & 
+    theme(aspect.ratio=1) 
+```
+
+## appendix
+
+### save data
+
+```{r save-data}
+saveRDS(sub, file.path(OUT, "fil.rds"))
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

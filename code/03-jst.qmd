@@ -1,0 +1,213 @@
+# jst
+
+## preamble
+
+### setup
+
+```{r dirs, message=FALSE, warning=FALSE}
+source("_utils.R")
+DIR <- dirname(getwd())
+DAT <- file.path(DIR, "data")
+OUT <- file.path(DIR, "outs")
+```
+
+```{r deps, message=FALSE, warning=FALSE}
+set.seed(251103)
+library(scuttle)
+library(BiocParallel)
+library(SingleCellExperiment)
+bp <- MulticoreParam(3)
+```
+
+```{r load-data}
+pbs <- readRDS(file.path(OUT, "qbs.rds"))
+sce <- readRDS(file.path(OUT, "fil.rds"))
+ist <- readRDS(file.path(OUT, "lv1.rds"))
+names(sub) <- sub <- sort(unique(ist$clust))
+```
+
+## selection
+
+```{r sel}
+names(ks) <- ks <- unique(colnames(mx <- ist$profiles))
+mx <- sapply(ks, \(k) rowMeans(mx[, k, drop=FALSE]))
+sel <- lapply(ks[ks != "tum"], \(.) {
+    my <- mx[, setdiff(ks, .)]
+    fc <- rowMins(apply(my, 2, \(x) mx[, .]/x))
+    fc <- fc[!is.na(fc) & is.finite(fc) & fc > 1]
+    gs <- names(tail(sort(fc), 2e3))
+})
+sapply(sel, length)
+```
+
+## clustering
+
+```{r echo=FALSE}
+run <- !file.exists(out <- file.path(OUT, "jst.rds"))
+```
+
+```{r clu, eval=run, message=FALSE, warning=FALSE, results="hide"}
+jst <- bplapply(sub[sub != "tum"], \(.) {
+    ns <- c(1e4, 2e4, 1e5)/4
+    nk <- seq(2, ifelse(. == "mye", 4, 8))
+    if (is.null(gs <- sel[[.]])) gs <- TRUE
+    se <- sce[, names(which(ist$clust == .))]
+    ist <- .ist(se, nk=nk, ns=ns, gs=gs, pbs=pbs[[.]])
+    ks <- intersect(letters, unique(ist$clust))
+    ks <- c(ks, sort(colnames(pbs[[.]])))
+    ist$clust <- factor(ist$clust, ks)
+    ist
+}, BPPARAM=bp)
+```
+
+```{r echo=FALSE}
+if (!run) jst <- readRDS(out) else saveRDS(jst, out)
+```
+
+```{r tum}
+kst <- ist
+idx <- ist$clust == "tum"
+kst$prob <- kst$prob[idx]
+kst$logliks <- kst$logliks[idx, ]
+kst$clust <- factor(kst$clust[idx])
+jst$tum <- kst
+```
+
+## visuals
+
+```{r plt-fq1, fig.width=8, fig.height=3}
+#| code-fold: true
+lapply(setdiff(sub, "tum"), \(.) {
+    kid <- droplevels(kid <- jst[[.]]$clust)
+    sce$ist <- kid[match(colnames(sce), names(kid))]
+    .plt_fq(sce, "sid", "ist", id=., h=TRUE)
+}) |> wrap_plots(nrow=1)
+```
+
+```{r plt-fq2, fig.width=4, fig.height=3, fig.align="center"}
+#| code-fold: true
+ps <- lapply(setdiff(sub, "tum"), \(.) {
+    kid <- droplevels(kid <- jst[[.]]$clust)
+    sce$ist <- kid[match(colnames(sce), names(kid))]
+    .plt_fq(sce, "ist", "sid", id=.)
+}) 
+ws <- sapply(ps, \(p) nlevels(p$data$Var1))
+wrap_plots(ps, guides="collect", widths=ws)
+```
+
+:::: {.panel-tabset}
+
+```{r plt-de, results="asis", fig.align="default", fig.width=8, fig.height=3}
+#| code-fold: true
+lapply(setdiff(sub, "tum"), \(.) {
+    cat("###",.,"\n:::{.panel-tabset}\n")
+    my <- jst$tum$profiles
+    mx <- (kst <- jst[[.]])$profiles
+    gs <- match(rownames(mx), rownames(my))
+    if (!all(is.na(gs))) {
+        es <- rowMeans(my[gs, , drop=FALSE])
+        kst$profiles <- cbind(mx, tum=es)
+    }
+    n1 <- ifelse(. == "str", 10, 20)
+    gs <- c("CD68", "CD79A", "MS4A1", "ITGAX", "CD68")
+    ps <- .plt_de(kst, "all", n1=n1, n2=80, gs=gs); names(ps)[1] <- "all"
+    for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
+    cat(":::\n")
+})
+```
+
+::::
+
+## labeling
+
+```{r lab}
+lab <- list(
+    str=list(
+        epi="a",
+        FRCcts="b",
+        BEC="c",
+        LEC="d",
+        FRCtcz="e",
+        FRCpv="f",
+        fib="g",
+        mCAF="h"),
+    mye=list(
+        AML="a",
+        mac.pi="b",
+        mye="d",
+        DC="DC",
+        pDC="pDC",
+        moDC="c",
+        mono.c="mono.c",
+        mono.nc="mono.nc"),
+    nkt=list(
+        x="b",
+        Tha="a",
+        Tp="Tp",
+        Tex=c("Tex", "c"),
+        Tfh="Tfh",
+        Treg="Treg",
+        Tcn="Tcn",
+        Tcm="Tcm",
+        Thn=c("Thn", "d"),
+        NK="NK/ILC"))
+kst <- lapply(names(lab), \(.) .jst(jst[[.]], lab[[.]]))
+kst <- lapply(kst, \(.) {.$clust <- factor(.$clust, exclude="x"); .})
+names(kst) <- names(lab); kst$tum <- jst$tum
+sapply(kst, \(.) table(.$clust, exclude=NULL))
+```
+
+```{r pbs}
+kid <- lapply(kst, \(.) .$clust)
+idx <- names(kid <- unlist(unname(kid)))
+kid <- kid[match(colnames(sce), idx)]
+pbs <- aggregateAcrossCells(sce, kid[idx])
+pbs <- logNormCounts(pbs)
+```
+
+```{r plt-pbs, fig.width=24, fig.height=6}
+#| code-fold: true
+n <- 7
+ks <- colnames(pbs)
+es <- logcounts(pbs)
+gs <- lapply(ks, \(i) {
+    j <- setdiff(ks, i)
+    fc <- apply(es[, j], 2, \(.) es[, i]/.)
+    fc <- rowMins(fc)
+    names(tail(sort(fc), n))
+}) |> unlist() 
+mx <- .z(t(es[gs, ]))
+pal <- setNames(.pal_kid[seq_along(ks)], ks)
+pheatmap::pheatmap(mx, annotation_legend=FALSE,
+    legend=FALSE, show_colnames=TRUE,
+    treeheight_row=5, treeheight_col=5,
+    fontsize=8, cellwidth=8, cellheight=8,
+    cluster_rows=FALSE, cluster_cols=FALSE,
+    color=pals::coolwarm(), border_color=NA,
+    gaps_col=cumsum(rep(n, length(ks))),
+    annotation_colors=list(x=pal),
+    annotation_names_col=FALSE,
+    annotation_col=data.frame(
+        row.names=gs,
+        x=rep(colnames(pbs), each=n)))
+```
+
+## appendix
+
+### save data
+
+```{r save-data}
+saveRDS(jst, file.path(OUT, "jst.rds"))
+saveRDS(kst, file.path(OUT, "lv2.rds"))
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

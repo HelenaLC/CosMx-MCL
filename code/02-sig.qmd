@@ -1,0 +1,159 @@
+# sig
+
+## preamble
+
+### setup
+
+```{r dirs, message=FALSE, warning=FALSE}
+source("_utils.R")
+DIR <- dirname(getwd())
+OUT <- file.path(DIR, "outs")
+DAT <- file.path(DIR, "data", "sig")
+```
+
+```{r deps, message=FALSE, warning=FALSE}
+library(UCell)
+library(AUCell)
+library(readxl)
+library(scuttle)
+library(jsonlite)
+library(BiocParallel)
+library(SingleCellExperiment)
+bp <- MulticoreParam(4)
+rd <- character()
+```
+
+```{r load-data}
+sce <- readRDS(file.path(OUT, "fil.rds"))
+```
+
+## sets
+
+### in house
+
+```{r inhouse}
+gs <- fromJSON(file.path(DAT, "InHouse.json"))
+rd <- append(rd, rep("in-house", length(gs)))
+sapply(gs, length)
+```
+
+### tumor
+
+```{r tumor, results="hold"}
+df <- read.csv(file.path(DAT, "tum.csv"))
+gt <- split(df$gene, df$cluster)
+rd <- append(rd, rep("tumor", length(gt)))
+names(gt) <- c(
+    "Quiescent", "SOX11 network", "Immediate-early response", 
+    "Memory/nnMCL", "Reactivated memory B cell", "Pre/Pro B cell", 
+    "MYC pathway", "BCR signaling/NFKB pathway", "S-Phase", "G2/M")
+sapply(gt, length)
+gs <- append(gs, gt)
+```
+
+### public
+
+```{r public, results="hold"}
+use <- read_xlsx(file.path(DAT, "sig_use.xlsx"))
+all <- read.csv(file.path(DAT, "sig_all.csv"))
+all <- split(all$Gene.symbol, all$Signature)
+use <- setdiff(use[[1]], names(gs))
+gt <- all[names(all) %in% use]
+rd <- append(rd, rep("public", length(gt)))
+sapply(gt, length)
+gs <- append(gs, gt)
+```
+
+### MSigDB
+
+```{r msigdb, results="hold"}
+url <- paste0(
+    "https://www.gsea-msigdb.org/gsea/msigdb/human/",
+    "download_geneset.jsp?geneSetName=%s&fileType=json")
+foo <- \(set) {
+    names(set) <- set
+    lapply(set, \(.) {
+        url <- sprintf(url, .)
+        tf <- tempfile(fileext=".json")
+        download.file(url, tf, quiet=TRUE)
+        fromJSON(tf)[[1]]$geneSymbols
+    })
+}
+use <- setdiff(use, names(gs))
+sapply(gt <- foo(use), length)
+rd <- append(rd, rep("msigdb", length(gt)))
+gs <- append(gs, gt)
+```
+
+### T cells
+
+```{r}
+nm <- file.path(DAT, "Chu2023.xlsx")
+for (. in names(is <- c(CD4=7, CD8=5))) {
+    df <- read_xlsx(nm, skip=1, sheet=is[[.]]) 
+    gt <- lapply(asplit(df, 2), \(.) .[!is.na(.)])
+    rd <- append(rd, rep("t-atlas", length(gt)))
+    names(gt) <- paste(names(gt), .)
+    gs <- append(gs, gt)
+}
+```
+
+
+```{r tbl}
+# number of genes by signature
+# & intersecting with 6k panel
+gs <- lapply(gt <- gs, intersect, rownames(sce))
+cbind(
+    original=summary(sapply(gt, length)), 
+    in_panel=summary(sapply(gs, length)))
+```
+
+## scoring
+
+```{r sco}
+sce <- ScoreSignatures_UCell(sce, 
+    features=gs, maxRank=nrow(sce), 
+    name=NULL, assay="counts", BPPARAM=bp)
+res <- altExp(sce, "UCell")
+colData(res) <- colData(sce)
+rowData(res)$set <- gs
+rowData(res)$typ <- rd
+table(rd); res
+```
+
+```{r sco-, eval=FALSE, echo=FALSE}
+set.seed(251205)
+mtx <- normalizeCounts(sce)
+idx <- split(colnames(sce), sce$fov)
+res <- bplapply(idx, BPPARAM=bp, \(.) {
+    mtx <- mtx[, ., drop=FALSE]
+    rnk <- AUCell_buildRankings(mtx, plotStats=FALSE, verbose=FALSE)
+    auc <- AUCell_calcAUC(gs, rnk, verbose=FALSE)
+})
+res <- do.call(cbind, res)
+res <- res[, colnames(sce)]
+res <- as(res, "SingleCellExperiment")
+colData(res) <- colData(sce)
+rowData(res)$set <- gs
+rowData(res)$typ <- rd
+table(rd)
+```
+
+## appendix
+
+### save data
+
+```{r save-data}
+saveRDS(res, file.path(OUT, "sig.rds"))
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::
