@@ -2,16 +2,7 @@
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-OUT <- file.path(DIR, "outs")
-DAT <- file.path(DIR, "data", "sig")
-```
-
-```{r deps, message=FALSE, warning=FALSE}
+```{r load-deps, message=FALSE, warning=FALSE}
 library(UCell)
 library(AUCell)
 library(readxl)
@@ -19,12 +10,15 @@ library(scuttle)
 library(jsonlite)
 library(BiocParallel)
 library(SingleCellExperiment)
+source("code/_utils.R")
 bp <- MulticoreParam(4)
 rd <- character()
 ```
 
+## loading
+
 ```{r load-data}
-sce <- readRDS(file.path(OUT, "fil.rds"))
+(sce <- readRDS("outs/fil.rds"))
 ```
 
 ## sets
@@ -32,7 +26,7 @@ sce <- readRDS(file.path(OUT, "fil.rds"))
 ### in house
 
 ```{r inhouse}
-gs <- fromJSON(file.path(DAT, "InHouse.json"))
+gs <- fromJSON("data/sig/InHouse.json")
 rd <- append(rd, rep("in-house", length(gs)))
 sapply(gs, length)
 ```
@@ -40,7 +34,7 @@ sapply(gs, length)
 ### tumor
 
 ```{r tumor, results="hold"}
-df <- read.csv(file.path(DAT, "tum.csv"))
+df <- read.csv("data/sig/tum.csv")
 gt <- split(df$gene, df$cluster)
 rd <- append(rd, rep("tumor", length(gt)))
 names(gt) <- c(
@@ -54,8 +48,8 @@ gs <- append(gs, gt)
 ### public
 
 ```{r public, results="hold"}
-use <- read_xlsx(file.path(DAT, "sig_use.xlsx"))
-all <- read.csv(file.path(DAT, "sig_all.csv"))
+use <- read_xlsx("data/sig/sig_use.xlsx")
+all <- read.csv("data/sig/sig_all.csv")
 all <- split(all$Gene.symbol, all$Signature)
 use <- setdiff(use[[1]], names(gs))
 gt <- all[names(all) %in% use]
@@ -88,7 +82,7 @@ gs <- append(gs, gt)
 ### T cells
 
 ```{r}
-nm <- file.path(DAT, "Chu2023.xlsx")
+nm <- "data/sig/Chu2023.xlsx"
 for (. in names(is <- c(CD4=7, CD8=5))) {
     df <- read_xlsx(nm, skip=1, sheet=is[[.]]) 
     gt <- lapply(asplit(df, 2), \(.) .[!is.na(.)])
@@ -141,10 +135,10 @@ table(rd)
 
 ## appendix
 
-### save data
+### saving
 
 ```{r save-data}
-saveRDS(res, file.path(OUT, "sig.rds"))
+saveRDS(res, "outs/sig.rds")
 ```
 
 ::: {.callout-note icon=false, collapse=true}

@@ -2,24 +2,14 @@
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-OUT <- file.path(DIR, "outs")
-DAT <- file.path(DIR, "data", "sig")
-```
-
-### deps
-
-```{r deps, message=FALSE, warning=FALSE}
+```{r load-deps, message=FALSE, warning=FALSE}
 library(Matrix)
 library(scater)
 library(reticulate)
 library(BiocParallel)
 library(zellkonverter)
 library(SingleCellExperiment)
+source("code/_utils.R")
 bp <- MulticoreParam(8)
 # activate conda environment
 bin <- "~/software/mambaforge/bin"
@@ -27,13 +17,13 @@ use_python(file.path(bin, "python"))
 use_condaenv("commot", file.path(bin, "conda"))
 ```
 
-### data
+## loading
 
-```{r data}
-sce <- readRDS(file.path(OUT, "fil.rds"))
+```{r load-data}
+(sce <- readRDS("outs/fil.rds"))
 ```
 
-```{r prep}
+```{r prep-data}
 # wrangling
 xy <- grep("global_mm$", names(colData(sce)))
 xy <- as.matrix(colData(sce)[xy])
@@ -136,15 +126,15 @@ res
 
 ### saving
 
-```{r save}
-saveRDS(res, file.path(OUT, "ccc.rds"))
+```{r save-data}
+saveRDS(res, "outs/ccc.rds")
 ```
 
 ::: {.callout-note icon=false, collapse=true}
 
 ### session
 
-```{r info}
+```{r sess-info}
 #| code-fold: false
 sessionInfo()
 ```

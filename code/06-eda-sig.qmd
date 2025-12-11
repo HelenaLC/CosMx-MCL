@@ -1,18 +1,8 @@
-# eda
+# sig
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-OUT <- file.path(DIR, "outs")
-```
-
-### deps
-
-```{r deps, message=FALSE, warning=FALSE}
+```{r load-deps, message=FALSE, warning=FALSE}
 library(arrow)
 library(scran)
 library(scater)
@@ -20,17 +10,15 @@ library(scuttle)
 library(tidytext)
 library(BiocParallel)
 library(SingleCellExperiment)
+source("code/_utils.R")
 bp <- MulticoreParam(4)
 set.seed(251206)
 ```
 
-### loading
+## loading
 
 ```{r load-data}
-(sce <- readRDS(file.path(OUT, "pro.rds")))
-sig <- readRDS(file.path(OUT, "sig.rds"))
-colData(sig) <- colData(sce)
-altExp(sce, "UCell") <- sig
+(sce <- readRDS("outs/pro.rds"))
 ```
 
 ## reduction
@@ -235,23 +223,7 @@ plot_layout(guides="collect")
 plot_layout(guides="collect")
 ```
 
-```{r echo=FALSE, eval=FALSE, fig.width=5, fig.height=4}
-sub <- sce[, sce$lv1 == "tum"]
-sub$foo <- sub$fqs[, "tum"]
-ids <- colData(sub)[c("sid", "ctx")]
-pbs <- aggregateAcrossCells(sub, ids, coldata.merge=list(foo=mean))
-pbs <- logNormCounts(`sizeFactors<-`(pbs, value=NULL))
-pbs <- runPCA(pbs, ncomponents=5, subset_row=rowData(pbs)$tum)
-plotPCA(pbs, colour_by="foo") + coord_equal()
-```
-
 ## appendix
-
-### save data
-
-```{r save-data}
-
-```
 
 ::: {.callout-note icon=false, collapse=true}
 

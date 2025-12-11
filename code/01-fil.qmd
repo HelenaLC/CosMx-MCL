@@ -2,16 +2,7 @@
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-DAT <- file.path(DIR, "data")
-OUT <- file.path(DIR, "outs")
-```
-
-```{r deps, message=FALSE, warning=FALSE}
+```{r load-deps, message=FALSE, warning=FALSE}
 library(zoo)
 library(tidyr)
 library(dplyr)
@@ -19,15 +10,18 @@ library(scuttle)
 library(ggplot2)
 library(patchwork)
 library(SingleCellExperiment)
+source("code/_utils.R")
 ```
+
+## loading
 
 ```{r load-data}
 # drop problematic core
-sce <- readRDS(file.path(OUT, "raw.rds"))
+sce <- readRDS("outs/raw.rds")
 (sce <- sce[, sce$sid != "032LNd"])
 ```
 
-## quality control
+## quality
 
 ### FOV borders
 
@@ -142,10 +136,10 @@ p2 <- p0 +
 
 ## appendix
 
-### save data
+### saving
 
 ```{r save-data}
-saveRDS(sub, file.path(OUT, "fil.rds"))
+saveRDS(sub, "outs/fil.rds")
 ```
 
 ::: {.callout-note icon=false, collapse=true}
