@@ -17,8 +17,8 @@
 - [clustering](02-ist.qmd)
   - semi-supervised for all but stromal
   - split into NK/T, myeloid stromal & tumor cells
-- [subclustering](03-jst.qmd)
-  - semi-supervised for all but stromal
+- [subclustering](03-jst.qmd)''
+  - semi-supervised for all but stroml
   - subset-specific feature selection
 - [contexts](04-ctx.qmd)
   - cluster cells based on composition    
