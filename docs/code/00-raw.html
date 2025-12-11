@@ -4807,8 +4807,12 @@ vertical-align: -.125em;
     </a>
     <ul class="dropdown-menu" aria-labelledby="nav-menu-eda">    
         <li>
+    <a class="dropdown-item" href="../code/06-eda-ist.html">
+ <span class="dropdown-text">ist</span></a>
+  </li>  
+        <li>
     <a class="dropdown-item" href="../code/06-eda-sig.html">
- <span class="dropdown-text">eda</span></a>
+ <span class="dropdown-text">sig</span></a>
   </li>  
         <li>
     <a class="dropdown-item" href="../code/06-eda-ccc.html">
@@ -4991,7 +4995,8 @@ altExpNames(0):</code></pre>
 <section id="saving" class="level3">
 <h3 class="anchored" data-anchor-id="saving">saving</h3>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(sub, <span class="st">&quot;outs/raw.rds&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(sub, <span class="st">&quot;outs/raw.rds&quot;</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="fu">write_parquet</span>(at, <span class="st">&quot;outs/pol.parquet&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
