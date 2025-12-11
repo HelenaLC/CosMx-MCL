@@ -1,31 +1,49 @@
 # toc
 
-- [pseudobulks](00-ref.qmd)
-- [setup](00-raw.qmd)
+- [reference](code/00-ref.qmd)
+  - low- & high-res. pseoduobulks  
+    from scRNA-seq reference data
+- [setup](code/00-raw.qmd)
   - add core-level metadata
   - write polygons to *.parquet*
   - format into `SingleCellExperiment`
   - negative & false codes as `altExps`
-- [filtering](01-fil.qmd)
+- [filtering](code/01-fil.qmd)
   - based on cell-level metrics  
     & distance to FOV borders
-- [signatures](02-sig.qmd)
+- [signatures](code/02-sig.qmd)
   - MSigDB, in-house, public  
     & pan-cancer T cell atlas
-- [signaling](02-ccc.qmd)
+- [signaling](code/02-ccc.qmd)
   - using `COMMOT`
-- [clustering](02-ist.qmd)
+- [clustering](code/02-ist.qmd)
   - semi-supervised for all but stromal
   - split into NK/T, myeloid stromal & tumor cells
-- [subclustering](03-jst.qmd)''
-  - semi-supervised for all but stroml
+- [subclustering](code/03-jst.qmd)''
+  - semi-supervised for all but stromal
   - subset-specific feature selection
-- [contexts](04-ctx.qmd)
+- [contexts](code/04-ctx.qmd)
   - cluster cells based on composition    
     of 20um radial neighborhoods
-- [processing](05-pro.qmd)
-  - pooling of all previousresults
+- [processing](code/05-pro.qmd)
+  - pooling of results into single object
   - dimensionality reduction (joint & split)
-- [EDA signatures](06-eda-sig.qmd)
-- [EDA signaling](06-eda-ccc.qmd)
+- [EDA clustering](code/06-eda-ist.qmd)
+- [EDA signatures](code/06-eda-sig.qmd)
+- [EDA signaling](code/06-eda-ccc.qmd)
 
+**nomenclature**
+
+- core identifiers = patient + replicate + tissue + group
+  - patient: 01-12; replicate: 1 or 2 if any, 0 otherwise  
+    (e.g., 071 = patient 7, 1st rep; 020 = patient 2, only rep)
+  - tissue:
+    - EY = eye
+    - LN = lymph node
+    - SO = soft tissue
+    - NP = nasopharyngeal
+  - group:
+    - m = mantle
+    - n = nodal
+    - d = diffuse
+  

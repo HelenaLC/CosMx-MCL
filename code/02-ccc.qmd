@@ -20,15 +20,8 @@ use_condaenv("commot", file.path(bin, "conda"))
 ## loading
 
 ```{r load-data}
-(sce <- readRDS("outs/fil.rds"))
-```
-
-```{r prep-data}
-# wrangling
-xy <- grep("global_mm$", names(colData(sce)))
-xy <- as.matrix(colData(sce)[xy])
-reducedDim(sce, "spatial") <- xy
-sce <- logNormCounts(sce)
+sce <- readRDS("outs/fil.rds")
+(sce <- logNormCounts(sce))
 ```
 
 ## analysis
@@ -36,6 +29,11 @@ sce <- logNormCounts(sce)
 ### setup
 
 ```{r ccc-set}
+# wrangling
+xy <- grep("global_mm$", names(colData(sce)))
+xy <- as.matrix(colData(sce)[xy])
+reducedDim(sce, "spatial") <- xy
+
 # dependencies
 ad <- import("anndata")
 ct <- import("commot")
@@ -67,6 +65,10 @@ nrow(sub <- sce[unique(c(db$ligand, rs)), ])
 
 ### inference
 
+```{r echo=FALSE}
+run <- !file.exists(out <- "outs/ccc.rds")
+```
+
 ```{r ccc-run}
 set.seed(251205)
 bo <- bpoptions(progressbar=TRUE)
@@ -93,8 +95,11 @@ sr <- bplapply(
     })
 er <- sapply(sr, inherits, "error")
 ex <- sapply(sr, is.null)
-table(na <- er | ex)
-sr <- sr[!na]
+sr <- sr[!(er|ex)]
+```
+
+```{r echo=FALSE}
+if (!run) sr <- readRDS(out) else saveRDS(sr, out)
 ```
 
 ### wrangling
@@ -112,7 +117,7 @@ res <- lapply(res, \(.) {
     nms <- gsub("^(s|r)-", "", colnames(.))
     `colnames<-`(mtx, nms)
 })
-# more reformatting
+# conversion
 res <- SingleCellExperiment(
     assays=lapply(res, t), 
     colData=colData(sce))

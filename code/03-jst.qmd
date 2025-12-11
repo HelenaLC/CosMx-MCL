@@ -2,28 +2,24 @@
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-DAT <- file.path(DIR, "data")
-OUT <- file.path(DIR, "outs")
-```
-
-```{r deps, message=FALSE, warning=FALSE}
-set.seed(251103)
+```{r load-deps, message=FALSE, warning=FALSE}
 library(scuttle)
 library(BiocParallel)
 library(SingleCellExperiment)
+source("code/_utils.R")
 bp <- MulticoreParam(3)
+set.seed(251103)
 ```
 
+## loading
+
 ```{r load-data}
-pbs <- readRDS(file.path(OUT, "qbs.rds"))
-sce <- readRDS(file.path(OUT, "fil.rds"))
-ist <- readRDS(file.path(OUT, "lv1.rds"))
-names(sub) <- sub <- sort(unique(ist$clust))
+pbs <- readRDS("outs/qbs.rds")
+sce <- readRDS("outs/fil.rds")
+ist <- readRDS("outs/lv1.rds")
+lapply(pbs, colnames)
+sub <- sort(unique(ist$clust))
+(names(sub) <- sub)
 ```
 
 ## selection
@@ -43,7 +39,7 @@ sapply(sel, length)
 ## clustering
 
 ```{r echo=FALSE}
-run <- !file.exists(out <- file.path(OUT, "jst.rds"))
+run <- !file.exists(out <- "outs/jst.rds")
 ```
 
 ```{r clu, eval=run, message=FALSE, warning=FALSE, results="hide"}
@@ -109,8 +105,7 @@ lapply(setdiff(sub, "tum"), \(.) {
         kst$profiles <- cbind(mx, tum=es)
     }
     n1 <- ifelse(. == "str", 10, 20)
-    gs <- c("CD68", "CD79A", "MS4A1", "ITGAX", "CD68")
-    ps <- .plt_de(kst, "all", n1=n1, n2=80, gs=gs); names(ps)[1] <- "all"
+    ps <- .plt_de(kst, "all", n1=n1, n2=80); names(ps)[1] <- "all"
     for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
     cat(":::\n")
 })
@@ -137,7 +132,7 @@ lab <- list(
         mye="d",
         DC="DC",
         pDC="pDC",
-        moDC="c",
+        TAM="c",
         mono.c="mono.c",
         mono.nc="mono.nc"),
     nkt=list(
@@ -194,11 +189,11 @@ pheatmap::pheatmap(mx, annotation_legend=FALSE,
 
 ## appendix
 
-### save data
+### saving
 
 ```{r save-data}
-saveRDS(jst, file.path(OUT, "jst.rds"))
-saveRDS(kst, file.path(OUT, "lv2.rds"))
+saveRDS(jst, "outs/jst.rds")
+saveRDS(kst, "outs/lv2.rds")
 ```
 
 ::: {.callout-note icon=false, collapse=true}

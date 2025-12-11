@@ -62,7 +62,8 @@ sub <- sce[, !rowAnys(ex)]
 # percent excluded by each
 round(100*colMeans(ex), 2)
 # percent excluded overall
-round(100*ncol(sub)/ncol(sce), 2)
+p <- ncol(sub)/ncol(sce)
+round(100*(1-p), 2)
 # number of cells raw/fil
 c(ncol(sce), ncol(sub))
 # cell area statistics

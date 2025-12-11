@@ -17,7 +17,14 @@ project:
   output-dir: docs
   execute-dir: project
   render: 
-    - code/*.qmd
+    - code/index.qmd
+    - code/00*.qmd
+    - code/01*.qmd
+    - code/02*.qmd
+    - code/03*.qmd
+    - code/04*.qmd
+    - code/05*.qmd
+    - code/06*.qmd
     
 website:
   title: MCL
@@ -36,5 +43,6 @@ website:
       - href: code/05-pro.qmd
       - text: eda
         menu:
+          - href: code/06-eda-ist.qmd
           - href: code/06-eda-sig.qmd
           - href: code/06-eda-ccc.qmd

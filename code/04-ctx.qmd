@@ -2,36 +2,24 @@
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-DAT <- file.path(DIR, "data")
-OUT <- file.path(DIR, "outs")
-```
-
-### deps
-
-```{r deps, message=FALSE, warning=FALSE}
+```{r load-deps, message=FALSE, warning=FALSE}
 library(RANN)
 library(arrow)
 library(dplyr)
 library(tidyr)
 library(cluster)
 library(circlize)
-library(BiocParallel)
 library(ComplexHeatmap)
 library(SingleCellExperiment)
-bp <- MulticoreParam(3)
+source("code/_utils.R")
 ```
 
-### loading
+## loading
 
 ```{r load-data}
-sce <- readRDS(file.path(OUT, "fil.rds"))
-ist <- readRDS(file.path(OUT, "lv1.rds"))
-jst <- readRDS(file.path(OUT, "lv2.rds"))
+sce <- readRDS("outs/fil.rds")
+ist <- readRDS("outs/lv1.rds")
+jst <- readRDS("outs/lv2.rds")
 ```
 
 ## labeling
@@ -111,7 +99,7 @@ t(sapply(cs, \(.) table(ns[.]))); table(ns)
 
 ```{r plt-xy, results="asis", fig.align="default", fig.width=10, fig.height=3}
 idx <- split(colnames(sce), sce$sid)
-pol <- file.path(OUT, "pol.parquet")
+pol <- "pol.parquet")
 pol <- read_parquet(pol, as_data_frame=FALSE)
 pal <- list(lv1=.pal_sub, lv2=.pal_kid, ctx=.pal_ctx)
 pal <- lapply(pal, \(.) scale_fill_manual(drop=FALSE, values=.))
@@ -235,8 +223,8 @@ plot_layout(guides="collect") &
 ### save data
 
 ```{r save-data}
-saveRDS(fq, file.path(OUT, "fqs.rds"))
-saveRDS(ns, file.path(OUT, "ctx.rds"))
+saveRDS(fq, "outs/fqs.rds"))
+saveRDS(ns, "outs/ctx.rds"))
 ```
 
 ::: {.callout-note icon=false, collapse=true}

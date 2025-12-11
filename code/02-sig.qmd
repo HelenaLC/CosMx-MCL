@@ -35,7 +35,11 @@ sapply(gs, length)
 
 ```{r tumor, results="hold"}
 df <- read.csv("data/sig/tum.csv")
-gt <- split(df$gene, df$cluster)
+df <- split(df, df$cluster)
+gt <- lapply(df, \(fd) {
+    o <- order(fd$avg_log2FC)
+    tail(fd$gene[o], 50)
+})
 rd <- append(rd, rep("tumor", length(gt)))
 names(gt) <- c(
     "Quiescent", "SOX11 network", "Immediate-early response", 
