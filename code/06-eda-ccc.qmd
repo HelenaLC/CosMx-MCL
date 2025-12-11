@@ -2,27 +2,18 @@
 
 ## preamble
 
-### setup
-
-```{r dirs, message=FALSE, warning=FALSE}
-source("_utils.R")
-DIR <- dirname(getwd())
-OUT <- file.path(DIR, "outs")
-```
-
-### deps
-
-```{r deps, message=FALSE, warning=FALSE}
+```{r load-deps, message=FALSE, warning=FALSE}
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(SingleCellExperiment)
+source("code/_utils.R")
 ```
 
-### loading
+## loading
 
 ```{r load}
-sce <- readRDS(file.path(OUT, "pro.rds"))
+sce <- readRDS("outs/pro.rds")
 (sce <- altExp(sce, "COMMOT"))
 ```
 
@@ -61,10 +52,10 @@ ps <- lapply(names(gs), \(.) {
     my <- as.matrix(mx[, -1])
     rownames(my) <- mx[[1]]
     ggplot(fd, aes(ctx, name, fill=value)) + 
-        geom_tile() + scale_fill_gradient2(
+        geom_tile() + scale_fill_gradientn(
             "z-scaled mean\nsignaling score",
-            limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2),
-            low="turquoise", mid="grey95", high="deeppink") +
+            colors=rev(pals::brewer.puor(99)),
+            limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
         scale_x_discrete(limits=.xo(my)) +
         scale_y_discrete(limits=.yo(my)) +
         coord_equal(2/3, expand=FALSE) + 
@@ -107,10 +98,10 @@ ps <- lapply(names(gs), \(.) {
     my <- as.matrix(mx[, -1])
     rownames(my) <- mx[[1]]
     ggplot(fd, aes(name, lv2, fill=value)) + 
-        geom_tile() + scale_fill_gradient2(
+        geom_tile() + scale_fill_gradientn(
             "z-scaled mean\nsignaling score",
-            limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2),
-            low="turquoise", mid="grey95", high="deeppink") +
+            colors=rev(pals::brewer.puor(99)),
+            limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
         scale_x_discrete(limits=.yo(my)) +
         scale_y_discrete(limits=.xo(my)) +
         coord_equal(2/3, expand=FALSE) + 
@@ -161,12 +152,6 @@ head(df)
 ```
 
 ## appendix
-
-### save data
-
-```{r save-data}
-
-```
 
 ::: {.callout-note icon=false, collapse=true}
 
