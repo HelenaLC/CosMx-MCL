@@ -1,0 +1,150 @@
+# nns
+
+## preamble
+
+```{r load-deps, message=FALSE, warning=FALSE}
+library(RANN)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tidytext)
+library(spatstat.geom)
+library(spatstat.explore)
+source("code/_utils.R")
+```
+
+## loading
+
+```{r load-data}
+(sce <- readRDS("outs/pro.rds"))
+```
+
+## density
+
+### tumor
+
+```{r den-tum-viz, warning=FALSE, fig.width=9, fig.height=6}
+#| code-fold: true
+# get point pattern using per-core 
+# convex hull as window of observation
+xy <- grep("global_mm", names(cd <- colData(sce)))
+cs <- split(colnames(sce), sce$sid)
+pp <- lapply(cs, \(.) {
+    xy <- as.matrix(cd[., xy])
+    ow <- ripras(xy)
+    xy <- xy[cd$lv2[.] == "tum", ]
+    pp <- ppp(xy[,1], xy[,2], window=ow)
+})
+# visualize kernel density estimate
+# of tumoral density across cores
+kd <- lapply(pp, density.ppp)
+par(mfrow=c(4, 5), mar=c(1,0,0,0))
+for (. in names(kd)) plot(kd[[.]], main=., col=pals::jet())
+```
+
+```{r den-tum-bin, warning=FALSE, results="hold", fig.width=6, fig.height=4}
+#| code-fold: true
+# estimate tumoral density at
+# observed cellular coordinates
+fn <- lapply(pp, densityfun)
+ds <- lapply(names(fn), \(.) {
+    xy <- cd[cs[[.]], xy]
+    fn[[.]](xy[,1], xy[,2], drop=FALSE)
+})
+is <- match(colnames(sce), unlist(cs))
+df <- data.frame(colData(sce), kd=unlist(ds)[is])
+xs <- seq(min(ds <- .q(sqrt(df$kd))), max(ds), l=26)
+df$bin <- cut(ds, breaks=xs, include.lowest=TRUE)
+hist(ds, n=100, 
+    xlab="q-scaled tumoral density", 
+    ylab="# cells", main="")
+abline(v=xs, col="red")
+```
+
+### other
+
+```{r den-lv2-hm, fig.align="center", fig.width=5, fig.height=4}
+#| code-fold: true
+# wrangling
+mu <- df |>
+    pivot_longer(starts_with("fqs")) |>
+    group_by(name, bin) |>
+    summarize_at("value", mean) |>
+    group_by(name) |>
+    mutate_at("value", .z)
+# ordering
+yo <- mu |>
+    group_by(name) |>
+    slice_max(value, n=1, with_ties=FALSE) |>
+    arrange(bin, value) |>
+    pull(name)
+# plotting
+ggplot(mu, 
+    aes(bin, name, fill=value)) +
+    scale_fill_gradientn(
+        "z-scaled frequency in 20um radial\nneighborhood of tumor cells",
+        colors=rev(pals::brewer.puor(9)), 
+        limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
+    scale_y_discrete(NULL, limits=yo, labels=\(.) gsub("fqs\\.", "", .)) +
+    coord_cartesian(expand=FALSE) +
+    labs(x="tumoral density") +
+    geom_tile() +
+    .thm_fig_c("minimal") + theme(
+        aspect.ratio=1,
+        legend.position="top",
+        legend.title.position="top",
+        legend.title=element_text(hjust=0.5),
+        legend.key.height=unit(0.4, "lines"),
+        legend.key.width=unit(0.8, "lines"),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+```{r den-lv2-fq, fig.align="center", fig.width=3, fig.height=3}
+#| code-fold: true
+fd <- df |>
+    add_count(lv2) |>
+    group_by(bin, lv2) |>
+    summarise_at("n", sum) |>
+    group_by(lv2) |>
+    mutate(p=n/sum(n))
+ggplot(filter(fd, lv2 != "tum"), aes(bin, n, fill=lv2)) +
+    geom_col(position="fill", key_glyph="point") +
+    labs(x="tumoral density", y="frequency") +
+    scale_fill_manual(values=.pal_kid) +
+    coord_cartesian(expand=FALSE) +
+    .thm_fig_d("minimal", "f") + theme(
+        aspect.ratio=3/2,
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+```
+
+```{r den-lv2-lm, fig.align="center", fig.width=4, fig.height=3}
+#| code-fold: true
+fit <- by(fd, fd$lv2, \(.) lm(p~as.integer(bin), data=.))
+b <- sapply(fit, \(.) as.numeric(coef(.)[2]))
+. <- abs(b) > 0.005; b[.] <- 0.005*sign(b[.])
+gg <- data.frame(k=names(b), b=100*b)
+gg <- filter(gg, abs(b) > 0.01)
+ggplot(gg, aes(b, reorder(k, b), fill=b)) +
+    scale_fill_gradientn(
+        limits=c(-0.5, 0.5),
+        colors=rev(pals::brewer.rdbu(9))) +
+    labs(x="(de/in)crease with density", y=NULL) +
+    .thm_fig_d("bw", "f") + theme(aspect.ratio=1) +
+    coord_cartesian(xlim=100*c(-0.005, 0.005)) +
+    geom_col(width=0.8, show.legend=FALSE) 
+```
+
+## appendix
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

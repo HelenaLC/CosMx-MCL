@@ -41,6 +41,7 @@ website:
       - href: code/03-jst.qmd
       - href: code/04-ctx.qmd
       - href: code/05-pro.qmd
+      - href: code/06-nns.qmd
       - text: eda
         menu:
           - href: code/06-eda-ist.qmd
