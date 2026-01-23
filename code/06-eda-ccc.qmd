@@ -25,6 +25,60 @@ y <- as.matrix(Reduce(`+`, assays(x))/2)
 df <- data.frame(colData(sce), t(y), check.names=FALSE)
 ```
 
+### tumor
+
+```{r}
+# select
+rho <- cor(t(y), sce$fqs$tum)
+rho <- rho[order(abs(rho[, 1])), 1]
+top <- tail(names(rho), 40)
+# average by bin
+xs <- seq(-(dx <- 0.05), 1+dx, dx*2)
+fq <- cut(.q(sce$fqs$tum), breaks=xs)
+fq <- xs[as.integer(fq)]+dx
+fq <- factor(fq, sort(unique(fq)))
+sub <- sce[rowData(sce)$typ == "pw", ]
+y <- as.matrix(Reduce(`+`, assays(sub))/2)
+assay(sub, "foo") <- y
+mu <- aggregateAcrossCells(sub,
+    ids=fq, statistics="mean",
+    use.assay.type="foo")
+df <- data.frame(fq=mu$ids, t(assay(mu)), check.names=FALSE)
+# selection
+mx <- as.matrix(df[, rownames(sub)])
+ds <- rowDiffs(colRanges(mx))
+ds <- ds[order(abs(ds[, 1])), 1]
+gs <- names(tail(ds, 20))
+rho <- cor(t(y), sce$fqs$tum)
+rho <- rho[order(abs(rho[, 1])), 1]
+gs <- names(tail(rho, 40))
+# scale across bins
+fd <- df |>
+    pivot_longer(-fq) |>
+    group_by(name) |>
+    mutate_at("value", .z) |>
+    filter(name %in% gs)
+# order by peak
+yo <- fd |>
+    group_by(name) |>
+    slice_max(value, with_ties=FALSE) |>
+    arrange(fq, value) |>
+    pull(name) |> rev()
+# plotting
+ggplot(fd, aes(fq, name, fill=value)) +
+    geom_tile() + 
+    scale_fill_gradientn(
+        "z-scaled\nmean score",
+        colors=rev(pals::brewer.puor(9)),
+        limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
+    labs(x="tumor density", y=NULL) +
+    coord_equal(2/3, expand=FALSE) + 
+    scale_y_discrete(limits=yo) +
+    .thm_fig_c("minimal") + theme(
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
 ### by ctx
 
 ```{r pws-ctx}

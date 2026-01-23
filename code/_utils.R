@@ -390,8 +390,9 @@
     }
     # plotting
     ggplot(df, aes(x, y, fill=.data[[c]], group=cell)) + 
-        ggrastr::rasterize(dpi=600,
-        geom_polygon(col=lc, alpha=a, linewidth=lw, key_glyph="point")) +
+        ggrastr::rasterize(dpi=300,
+        geom_polygon(col=lc, alpha=a, linewidth=lw, 
+            show.legend=TRUE, key_glyph="point")) +
         coord_equal(expand=FALSE) + thm +
         if (!is.null(id)) ggtitle(.lab(id, length(unique(df$cell)))) 
 }
@@ -705,7 +706,7 @@ suppressPackageStartupMessages({
 # theme for spatial plots
 .thm_xy <- \(s=0.1) list(
     ggrastr::geom_point_rast(show.legend=TRUE,
-        shape=16, stroke=0, size=s, raster.dpi=600),
+        shape=16, stroke=0, size=s, raster.dpi=100),
     scale_x_continuous(expand=expansion(0, 0.1)),
     scale_y_continuous(expand=expansion(0, 0.1)),
     coord_equal(), theme(

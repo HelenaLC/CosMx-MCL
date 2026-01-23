@@ -3,6 +3,7 @@
 ## preamble
 
 ```{r load-deps, message=FALSE, warning=FALSE}
+library(arrow)
 library(scran)
 library(scuttle)
 library(SingleCellExperiment)
@@ -138,36 +139,44 @@ sub <- sce[, sce$lv1 == "str"]
 
 :::
 
-## tumor
+## co-loc
 
-```{r fig.width=8, fig.height=3}
+```{r bin}
+.bin <- \(z, x, a=NULL, nx=10) {
+    if (is.matrix(z)) {
+        z <- SingleCellExperiment(assays=list(foo=z))
+        a <- "foo"
+    }
+    xs <- cut(.q(x), 
+        include.lowest=TRUE,
+        breaks=seq(0, 1, l=nx))
+    mu <- aggregateAcrossCells(z, ids=xs,
+        use.assay.type=a, statistics="mean")
+    df <- data.frame(x=mu$ids, t(assay(mu)), check.names=FALSE)
+}
+```
+
+```{r plt-nns-sig, fig.align="center", fig.width=8, fig.height=3}
 #| code-fold: true
 # restrict to tumor
 sig <- altExp(sce, "UCell")
 sel <- rowData(sig)$typ != "t-atlas"
 sub <- sig[sel, sig$lv2 == "tum"]
 # average by bin
-xs <- seq(-(dx <- 0.05), 1+dx, dx*2)
-fq <- cut(.q(sub$fqs$tum), breaks=xs)
-fq <- xs[as.integer(fq)]+dx
-fq <- factor(fq, sort(unique(fq)))
-mu <- aggregateAcrossCells(sub,
-    ids=fq, statistics="mean",
-    use.assay.type=assayNames(sub)[1])
-df <- data.frame(fq=mu$ids, t(assay(mu)), check.names=FALSE)
+df <- .bin(sub, sub$fqs$tum, assayNames(sub)[1], nx=20)
 # scale across bins
 fd <- df |>
-    pivot_longer(-fq) |>
+    pivot_longer(-x) |>
     group_by(name) |>
     mutate_at("value", .z)
 # order by peak
 yo <- fd |>
     group_by(name) |>
     slice_max(value, with_ties=FALSE) |>
-    arrange(fq, value) |>
+    arrange(x, value) |>
     pull(name) |> rev()
 # plotting
-ggplot(fd, aes(fq, name, fill=value)) +
+ggplot(fd, aes(x, name, fill=value)) +
     geom_tile() + 
     scale_fill_gradientn(
         "z-scaled\nmean score",
@@ -179,6 +188,64 @@ ggplot(fd, aes(fq, name, fill=value)) +
     .thm_fig_c("minimal") + theme(
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank())
+```
+
+```{r fig.align="center", fig.width=3.5, fig.height=3}
+#| code-fold: true
+sub <- sce[, sce$lv2 == "tum"]
+df <- .bin(t(sub$fqs), sub$fqs$tum, nx=10)
+fd <- pivot_longer(df, -1)
+fd <- filter(fd, name != "tum")
+ggplot(fd, aes(x, value, fill=name)) + 
+    geom_col(position="fill", key_glyph="point") +
+    scale_fill_manual(NULL, values=.pal_kid) +
+    coord_cartesian(expand=FALSE) + 
+    .thm_fig_d("minimal", "f") + 
+    labs(x="tumor density", y="frequency") +
+    theme(aspect.ratio=1, axis.text=element_blank())
+```
+
+```{r fig.align="center", fig.width=4, fig.height=2.5}
+#| code-fold: true
+# binning
+sub <- sce[, sce$lv2 == "tum"]
+sig <- altExp(sub, "UCell")
+es <- c("S-Phase", "G2/M", "MYC pathway")
+es <- colSums(assay(sig)[es, ])
+fq <- t(as.matrix(sub$fqs))
+ex <- fq["tum", ] == 1
+df <- .bin(fq[, !ex], es[!ex], nx=20)
+# correlation
+rho <- cor(
+    as.numeric(df[[1]]), 
+    as.matrix(df[, -1]))
+top <- names(which(abs(rho[1, ]) > 2/3))
+rho <- format(rho[1, ], digits=2)
+# scaling
+fd <- df |>
+    pivot_longer(-1) |>
+    group_by(name) |>
+    mutate_at("value", .z) |>
+    filter(name %in% top)
+# ordering
+yo <- fd |>
+    group_by(name) |>
+    slice_max(value, with_ties=FALSE) |>
+    arrange(x, value) |>
+    pull(name) |> rev()
+# plottinh
+ggplot(fd, aes(x, name, fill=value)) + geom_tile() + 
+    annotate("text", nlevels(fd$x)-1, yo, hjust=0.5, size=3, label=rho[yo]) +
+    scale_fill_gradientn(
+        "z-scaled\nfrequency", 
+        colors=rev(pals::brewer.puor(9)),
+        limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
+    labs(x="tumor prolif. (mean S + G2/M + MYC)", y=NULL) +
+    scale_y_discrete(limits=yo) + coord_equal(2/3, expand=FALSE) + 
+    .thm_fig_c("minimal") + theme(
+        aspect.ratio=1, 
+        panel.grid=element_blank(),
+        axis.text.x=element_blank())
 ```
 
 ## appendix
