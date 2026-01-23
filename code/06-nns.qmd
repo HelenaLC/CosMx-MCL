@@ -63,6 +63,25 @@ abline(v=xs, col="red")
 
 ### other
 
+```{r den-sid-fq, fig.align="center", fig.width=3, fig.height=3}
+#| code-fold: true
+fd <- df |>
+    add_count(sid) |>
+    group_by(bin, sid) |>
+    summarise_at("n", sum) |>
+    group_by(sid) |>
+    mutate(p=n/sum(n))
+ggplot(fd, aes(bin, n, fill=sid)) +
+    geom_col(position="fill", key_glyph="point") +
+    labs(x="tumoral density", y="frequency") +
+    scale_fill_manual(values=.pal_sid) +
+    coord_cartesian(expand=FALSE) +
+    .thm_fig_d("minimal", "f") + theme(
+        aspect.ratio=3/2,
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+```
+
 ```{r den-lv2-hm, fig.align="center", fig.width=5, fig.height=4}
 #| code-fold: true
 # wrangling
