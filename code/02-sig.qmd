@@ -34,12 +34,6 @@ sapply(gs, length)
 ### tumor
 
 ```{r tumor, results="hold"}
-# df <- read.csv("data/sig/tum.csv")
-# df <- split(df, df$cluster)
-# gt <- lapply(df, \(fd) {
-#     o <- order(fd$avg_log2FC)
-#     tail(fd$gene[o], 200)
-# })
 df <- read.delim("data/sig/tum80.txt")
 gt <- split(df$gene, df$signature)
 rd <- append(rd, rep("tumor", length(gt)))

@@ -162,11 +162,13 @@ mu <- lapply(as, \(a) {
 -->
 
 ```{r sco-mtx}
-cm <- t(s) %*% r
+# matrix product of incoming 's' & 
+# outgoing 'r' signaling estimates
+s <- assay(mu[[1]])[sel, ]
+r <- assay(mu[[2]])[sel, ]
+cm <- t(s) %*% r 
+# hierarchical clustering
 clu <- hclust(dm <- dist(cm))
-opk <- maptree::kgs(clu, dm, 0.5, 20)
-k <- opk[which.min(opk)]
-k <- as.integer(names(k))
 k <- factor(cutree(clu, 15))
 ```
 
