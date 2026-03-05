@@ -22,15 +22,18 @@
 - [subclustering](code/03-jst.qmd)''
   - semi-supervised for all but stromal
   - subset-specific feature selection
-- [contexts](code/04-ctx.qmd)
+- [contexts](code/04-nns.qmd)
   - cluster cells based on composition    
     of 20um radial neighborhoods
+  - tumoral density analysis
 - [processing](code/05-pro.qmd)
   - pooling of results into single object
-  - dimensionality reduction (joint & split)
-- [EDA clustering](code/06-eda-ist.qmd)
-- [EDA signatures](code/06-eda-sig.qmd)
-- [EDA signaling](code/06-eda-ccc.qmd)
+  - dimensionality reduction
+  - add clinical metadata
+- [exploratory](code/06-eda.qmd)
+  - visualization across results
+- [comm.clust.](code/06-clu.qmd)
+  - signaling-based clustering
 
 **nomenclature**
 
@@ -40,8 +43,8 @@
   - tissue:
     - EY = eye
     - LN = lymph node
-    - SO = soft tissue
     - NP = nasopharyngeal
+    - SO = soft tissue (excluded)
   - group:
     - m = mantle
     - n = nodal
