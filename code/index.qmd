@@ -19,7 +19,7 @@
 - [clustering](code/02-ist.qmd)
   - semi-supervised for all but stromal
   - split into NK/T, myeloid stromal & tumor cells
-- [subclustering](code/03-jst.qmd)''
+- [subclustering](code/03-jst.qmd)
   - semi-supervised for all but stromal
   - subset-specific feature selection
 - [contexts](code/04-nns.qmd)
@@ -30,10 +30,10 @@
   - pooling of results into single object
   - dimensionality reduction
   - add clinical metadata
-- [exploratory](code/06-eda.qmd)
-  - visualization across results
 - [comm.clust.](code/06-clu.qmd)
   - signaling-based clustering
+- [exploratory](code/06-eda.qmd)
+  - visualization across results
 
 **nomenclature**
 
