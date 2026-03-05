@@ -9,52 +9,90 @@ library(scuttle)
 library(BiocParallel)
 library(SingleCellExperiment)
 source("code/_utils.R")
-bp <- MulticoreParam(8)
+bp <- MulticoreParam(6)
 ```
 
 ## loading
 
 ```{r load-data}
-sce <- readRDS("outs/fil.rds")
+sce <- readRDS("outs/nns.rds")
 sig <- readRDS("outs/sig.rds")
 ccc <- readRDS("outs/ccc.rds")
-ctx <- readRDS("outs/ctx.rds")
-fqs <- readRDS("outs/fqs.rds")
-ist <- readRDS("outs/lv1.rds")
-jst <- readRDS("outs/lv2.rds")
 ```
 
-### wrangling
+## setup
 
 ```{r prep-data}
-idx <- names(kid <- ist$clust)
-sce$lv1 <- kid[match(colnames(sce), idx)]
-kid <- lapply(jst, \(.) .$clust)
-idx <- names(kid <- unlist(unname(kid)))
-sce$lv2 <- kid[match(colnames(sce), idx)]
-colData(sce)$fqs <- fqs[colnames(sce), ]
-sce$ctx <- ctx[colnames(sce)]
 colData(sig) <- colData(sce)
 colData(ccc) <- colData(sce)
 altExp(sce, "UCell") <- sig
 altExp(sce, "COMMOT") <- ccc
 ```
 
+## metadata
+
+```{r add-md, results="hold"}
+nm <- "data/raw/clinical.xlsx"
+names(md <- readxl::read_xlsx(nm))
+is <- match(sce$sample_id, md$CLC_Id)
+colData(sce) <- cbind(colData(sce), md[is, ])
+```
+
+```{r plt-md, message=FALSE, fig.width=12, fig.height=3}
+#| code-fold: true
+cs <- match(unique(sce$sid), sce$sid)
+cd <- data.frame(colData(sce)[cs, ])
+cd <- cd[order(factor(cd$typ)), ]
+cd <- cd[order(factor(cd$gid)), ]
+cd$sid <- factor(cd$sid, cd$sid)
+num <- c("MIPI", "LDH", "LDHNORML")
+for (. in num) cd[[.]] <- as.numeric(cd[[.]])
+cd <- cd[, c("typ", grepv("[a-z]id$", names(cd)), names(cd)[107:134])]
+pal <- list(sid=.pal_sid, pid=.pal_pid, gid=.pal_gid, typ=.pal_typ)
+aes <- list(
+    theme_void(6),
+    coord_equal(expand=FALSE),
+    geom_tile(col="white", alpha=2/3),
+    theme(plot.title=element_text(angle=90, vjust=0.5, margin=margin(b=6))))
+ps <- lapply(names(cd), \(.) {
+    col <- if (. %in% names(pal)) {
+        scale_fill_manual(values=pal[[.]])
+    } else if (is.numeric(cd[[.]])) {
+        cd[[.]] <- round(cd[[.]], 2)
+        scale_fill_gradientn(colors=c("white", "red"))
+    }
+    ggplot(cd, aes(sid, 0, fill=.data[[.]])) + 
+        aes + col + ggtitle(.) +
+        geom_text(aes(label=.data[[.]]), size=1) 
+})
+ps[1] <- lapply(ps[1], `+`, list(theme(axis.text.y=element_text())))
+wrap_plots(ps, 
+    nrow=1, guides="collect") &
+    theme(legend.position="none") &
+    coord_flip()
+```
+
+```{r include=FALSE}
+ggsave("figs/metadata.pdf", units="cm", width=15, height=6)
+```
+
 ## processing
 
 ```{r pro-joint}
-set.seed(251206)
+set.seed(260202)
 sce <- logNormCounts(sce)
-tbl <- modelGeneVar(sce)
+tbl <- modelGeneVar(sce, block=sce$pid)
 sel <- getTopHVGs(tbl, n=2e3)
-sel <- rownames(sce) %in% sel
-rowData(sce)$sel <- sel
+rowData(sce)$sel <- rownames(sce) %in% sel
 sce <- runPCA(sce, subset_row=sel)
 sce <- runUMAP(sce, dimred="PCA", n_dimred=20)
 ```
 
-```{r pro-split}
-set.seed(251207)
+<!--
+### split
+
+```{r pro-split, eval=FALSE}
+set.seed(260203)
 idx <- split(colnames(sce), sce$lv1)
 names(ids) <- ids <- names(idx)
 lys <- bplapply(ids, \(.) {
@@ -66,23 +104,26 @@ lys <- bplapply(ids, \(.) {
 }, BPPARAM=bp)
 ```
 
-```{r pro-pool}
+### pool
+
+```{r pro-pool, eval=FALSE}
 # stash split reductions
 for (a in c("PCA", "UMAP")) {
     b <- switch(a, PCA="PCB", "UMAQ")
     dr <- lapply(lys, reducedDim, a)
     dr <- do.call(rbind, dr)
-    dr <- dr[colnames(sce), ]
-    reducedDim(sce, b) <- dr
+    cs <- match(colnames(sce), rownames(dr))
+    reducedDim(sce, b) <- dr[cs, ]
 }
 # stash feature selections
 sel <- sapply(ids, \(.) rowData(lys[[.]])[[.]])
-rowData(sce) <- cbind(rowData(sce), sel)
+rowData(sce) <- cbind(rowData(sce), sel); sce
 ```
+-->
 
 ## appendix
 
-### save data
+### saving
 
 ```{r save-data}
 saveRDS(sce, "outs/pro.rds")

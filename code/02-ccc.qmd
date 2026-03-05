@@ -3,6 +3,7 @@
 ## preamble
 
 ```{r load-deps, message=FALSE, warning=FALSE}
+library(RANN)
 library(Matrix)
 library(scater)
 library(reticulate)
@@ -10,7 +11,7 @@ library(BiocParallel)
 library(zellkonverter)
 library(SingleCellExperiment)
 source("code/_utils.R")
-bp <- MulticoreParam(8)
+bp <- MulticoreParam(6)
 # activate conda environment
 bin <- "~/software/mambaforge/bin"
 use_python(file.path(bin, "python"))
@@ -26,14 +27,28 @@ sce <- readRDS("outs/fil.rds")
 
 ## analysis
 
-### setup
+### radius
 
-```{r ccc-set}
-# wrangling
+```{r nns-get, fig.width=7, fig.height=3.5}
+# get radial nearest neighbors
 xy <- grep("global_mm$", names(colData(sce)))
 xy <- as.matrix(colData(sce)[xy])
 reducedDim(sce, "spatial") <- xy
+nn <- nn2(xy, searchtype="radius", r=r <- 0.02, k=101)
+```
 
+```{r nns-plt, fig.width=7, fig.height=3.5}
+#| code-fold: true
+n <- rowSums(nn$nn.idx[, -1] > 0)
+l <- sprintf("#cells in %sum radial neighborhood", r*1e3)
+hist(n, breaks=seq(-.5, max(n)+.5), xlab="", ylab="",  main=l)
+abline(v=quantile(n, c(.05, .95)), col="red", lw=2, lty=2)
+abline(v=m <- mean(n), col="red", lw=2); m
+```
+
+### setup
+
+```{r ccc-set}
 # dependencies
 ad <- import("anndata")
 ct <- import("commot")
@@ -65,14 +80,10 @@ nrow(sub <- sce[unique(c(db$ligand, rs)), ])
 
 ### inference
 
-```{r echo=FALSE}
-run <- !file.exists(out <- "outs/ccc.rds")
-```
-
 ```{r ccc-run}
-set.seed(251205)
+set.seed(260204)
 bo <- bpoptions(progressbar=TRUE)
-cs <- split(colnames(sce), sce$fov)
+cs <- split(colnames(sce), sce$sid)
 sr <- bplapply(
     BPPARAM=bp, BPOPTIONS=bo, 
     names(cs), \(f) {
@@ -98,33 +109,36 @@ ex <- sapply(sr, is.null)
 sr <- sr[!(er|ex)]
 ```
 
-```{r echo=FALSE}
-if (!run) sr <- readRDS(out) else saveRDS(sr, out)
-```
-
 ### wrangling
 
 ```{r post}
-# reformatting
-i <- colnames(sce)
+# collect
 s <- lapply(sr, \(.) .[[1]])
 r <- lapply(sr, \(.) .[[2]])
 s <- do.call(rbind, unname(s))
 r <- do.call(rbind, unname(r))
-res <- list(s=s[i, ], r=r[i, ])
-res <- lapply(res, \(.) {
+lys <- list(s=s, r=r)
+res <- lapply(lys, \(.) {
     mtx <- as(as.matrix(.), "dgCMatrix")
     nms <- gsub("^(s|r)-", "", colnames(.))
-    `colnames<-`(mtx, nms)
+    `colnames<-`(mtx[colnames(sce), ], nms)
 })
-# conversion
+
+# metadata
+lr <- with(db, paste(ligand, receptor, sep="-"))
+is <- match(nm <- colnames(res[[1]]), lr)
+dp <- `rownames<-`(db[is, ], nm)
+tt <- grep("total", nm)
+dp$type[tt] <- "Total"
+na <- is.na(dp$type)
+dp$type[na] <- "Pathway"
+dp$pathway[na] <- nm[na]
+
+# reformat
 res <- SingleCellExperiment(
     assays=lapply(res, t), 
-    colData=colData(sce))
-typ <- ifelse(grepl("-", rownames(res)), "lr", "pw")
-typ[grep("total", rownames(res))] <- "tt"
-rowData(res) <- data.frame(typ)
-res
+    colData=colData(sce), 
+    rowData=dp); res
 ```
 
 ## appendix

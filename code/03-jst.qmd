@@ -3,12 +3,12 @@
 ## preamble
 
 ```{r load-deps, message=FALSE, warning=FALSE}
+library(arrow)
 library(scuttle)
 library(BiocParallel)
 library(SingleCellExperiment)
 source("code/_utils.R")
-bp <- MulticoreParam(3)
-set.seed(251103)
+bp <- MulticoreParam(4)
 ```
 
 ## loading
@@ -17,23 +17,73 @@ set.seed(251103)
 pbs <- readRDS("outs/qbs.rds")
 sce <- readRDS("outs/fil.rds")
 ist <- readRDS("outs/lv1.rds")
-lapply(pbs, colnames)
+```
+
+## wrangling
+
+```{r add-epi}
+# include epithelia in stromal compartment
+ist$clust[ist$clust == "epi"] <- "str"
+epi <- colnames(ist$profiles) == "epi"
+colnames(ist$profiles)[epi] <- "str"
+```
+
+```{r prep-data}
+sce <- logNormCounts(sce)
 sub <- sort(unique(ist$clust))
-(names(sub) <- sub)
+names(sub) <- sub <- setdiff(sub, "epi")
+lapply(pbs, colnames); table(ist$clust)
 ```
 
 ## selection
 
 ```{r sel}
-names(ks) <- ks <- unique(colnames(mx <- ist$profiles))
+mx <- normalizeCounts(ist$profiles)
+names(ks) <- ks <- unique(colnames(mx))
 mx <- sapply(ks, \(k) rowMeans(mx[, k, drop=FALSE]))
-sel <- lapply(ks[ks != "tum"], \(.) {
+sel <- lapply(ks, \(.) {
     my <- mx[, setdiff(ks, .)]
-    fc <- rowMins(apply(my, 2, \(x) mx[, .]/x))
-    fc <- fc[!is.na(fc) & is.finite(fc) & fc > 1]
+    fc <- apply(my, 2, \(x) mx[, .]/x)
+    fc[!is.finite(fc)] <- NA
+    fc <- rowMins(fc, na.rm=TRUE)
+    fc <- fc[!is.na(fc) & is.finite(fc) & fc > 2]
     gs <- names(tail(sort(fc), 2e3))
 })
+sapply(ks, \(.) {
+    se <- sce[, names(which(ist$clust == .))]
+    gs <- intersect(rownames(se), sel[[.]])
+    summary(tot <- colSums(assay(se)[gs, ]))
+})
+# exclude Ig-related features for tumor subclustering
+sel$tum <- grepv("^IG(H|K|L)", sel$tum, invert=TRUE)
 sapply(sel, length)
+```
+
+```{r sel--, echo=FALSE, eval=FALSE}
+mx <- normalizeCounts(ist$profiles, log=TRUE)
+sel <- lapply(sub, \(i) {
+    j <- setdiff(sub, i)
+    i <- which(colnames(mx) == i)
+    a <- mx[, i, drop=FALSE]
+    b <- rowMeans(mx[, j, drop=FALSE])
+    fc <- apply(a, 2, \(.) ./b)
+    fc <- rowMeans(fc, na.rm=TRUE)
+    fc <- fc[is.finite(fc) & fc > 2]
+    names(tail(sort(fc), 2e3))
+})
+sapply(sub, \(.) {
+    se <- sce[, names(which(ist$clust == .))]
+    gs <- intersect(rownames(se), sel[[.]])
+    summary(tot <- colSums(assay(se)[gs, ]))
+})
+sapply(sel, length)
+```
+
+```{r sel-, echo=FALSE, eval=FALSE}
+cat("MYE\n"); grepv("C1Q|HLA-D|APOE|CD14|CD68", sel$mye) |> sort()
+cat("\nSTR\n"); grepv("VWF|CD93|^COL|HEY1|LYVE|MARCO|KRT", sel$str) |> sort()
+cat("\nNKT\n"); grepv("^(CD2|CD3|CD4|CD8|GZM|FOXP3|TIGIT)", sel$nkt) |> sort()
+cat("\nTUM\n"); grepv("TOP|TUBB|MKI|CCND|SOX|IGH|MZB|IRF4|CIITA|CD19|CD83|MS4A1", sel$tum) |> sort()
 ```
 
 ## clustering
@@ -43,12 +93,13 @@ run <- !file.exists(out <- "outs/jst.rds")
 ```
 
 ```{r clu, eval=run, message=FALSE, warning=FALSE, results="hide"}
-jst <- bplapply(sub[sub != "tum"], \(.) {
-    ns <- c(1e4, 2e4, 1e5)/4
-    nk <- seq(2, ifelse(. == "mye", 4, 8))
-    if (is.null(gs <- sel[[.]])) gs <- TRUE
+jst <- bplapply(sub, \(.) {
+    set.seed(260222)
     se <- sce[, names(which(ist$clust == .))]
-    ist <- .ist(se, nk=nk, ns=ns, gs=gs, pbs=pbs[[.]])
+    ex <- colSums(assay(se)[sel[[.]], ] > 0) < 10
+    ns <- c(1e4, 2e4, 1e5)/ifelse(. == "tum", 2, 5)
+    nk <- if (. == "mye") seq(2, 4) else if (. != "nkt") seq(3, 9) else 0
+    ist <- .ist(se[, !ex], nk=nk, ns=ns, gs=sel[[.]], pbs=pbs[[.]])
     ks <- intersect(letters, unique(ist$clust))
     ks <- c(ks, sort(colnames(pbs[[.]])))
     ist$clust <- factor(ist$clust, ks)
@@ -60,29 +111,28 @@ jst <- bplapply(sub[sub != "tum"], \(.) {
 if (!run) jst <- readRDS(out) else saveRDS(jst, out)
 ```
 
-```{r tum}
-kst <- ist
-idx <- ist$clust == "tum"
-kst$prob <- kst$prob[idx]
-kst$logliks <- kst$logliks[idx, ]
-kst$clust <- factor(kst$clust[idx])
-jst$tum <- kst
-```
-
 ## visuals
 
-```{r plt-fq1, fig.width=8, fig.height=3}
+### embedding
+
+```{r plt-fp, fig.width=12, fig.height=3.5, warning=FALSE}
+wrap_plots(lapply(names(jst), \(.) .plt_fp(jst[[.]], .)), nrow=1)
+```
+
+### abundance
+
+```{r plt-ist-fq1, fig.width=12, fig.height=3}
 #| code-fold: true
-lapply(setdiff(sub, "tum"), \(.) {
+lapply(sub, \(.) {
     kid <- droplevels(kid <- jst[[.]]$clust)
     sce$ist <- kid[match(colnames(sce), names(kid))]
     .plt_fq(sce, "sid", "ist", id=., h=TRUE)
 }) |> wrap_plots(nrow=1)
 ```
 
-```{r plt-fq2, fig.width=4, fig.height=3, fig.align="center"}
+```{r plt-ist-fq2, fig.width=6, fig.height=3, fig.align="center"}
 #| code-fold: true
-ps <- lapply(setdiff(sub, "tum"), \(.) {
+ps <- lapply(sub, \(.) {
     kid <- droplevels(kid <- jst[[.]]$clust)
     sce$ist <- kid[match(colnames(sce), names(kid))]
     .plt_fq(sce, "ist", "sid", id=.)
@@ -91,19 +141,15 @@ ws <- sapply(ps, \(p) nlevels(p$data$Var1))
 wrap_plots(ps, guides="collect", widths=ws)
 ```
 
+### markers
+
 :::: {.panel-tabset}
 
 ```{r plt-de, results="asis", fig.align="default", fig.width=8, fig.height=3}
 #| code-fold: true
-lapply(setdiff(sub, "tum"), \(.) {
+lapply(sub, \(.) {
     cat("###",.,"\n:::{.panel-tabset}\n")
-    my <- jst$tum$profiles
     mx <- (kst <- jst[[.]])$profiles
-    gs <- match(rownames(mx), rownames(my))
-    if (!all(is.na(gs))) {
-        es <- rowMeans(my[gs, , drop=FALSE])
-        kst$profiles <- cbind(mx, tum=es)
-    }
     n1 <- ifelse(. == "str", 10, 20)
     ps <- .plt_de(kst, "all", n1=n1, n2=80); names(ps)[1] <- "all"
     for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
@@ -113,82 +159,125 @@ lapply(setdiff(sub, "tum"), \(.) {
 
 ::::
 
+::: {.panel-tabset}
+
+```{r plt-ist-mg, results="asis", fig.width=8, fig.height=3}
+#| code-fold: true
+ps <- lapply(sub, \(.) {
+    gs <- .mgs[[.]]
+    se <- sce[, names(which(ist$clust == .))]
+    ks <- droplevels(jst[[.]]$clust)
+    se$. <- ks[match(colnames(se), names(ks))]
+    na <- setdiff(levels(ks), names(gs))
+    gs <- c(gs, lapply(setNames(na, na), \(.) c()))
+    .plt_dp(se, ".", gs, hc=!. %in% c("nkt", "mye"))
+})
+for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
+```
+
+:::
+
 ## labeling
 
 ```{r lab}
 lab <- list(
     str=list(
-        epi="a",
-        FRCcts="b",
-        BEC="c",
-        LEC="d",
-        FRCtcz="e",
-        FRCpv="f",
-        fib="g",
-        mCAF="h"),
+        FRCtcz="a",
+        epi=c("b", "f"),
+        mCAF="c",
+        fib="d",
+        FRCpv="e",
+        BEC="g",
+        FRCcts="h",
+        LEC="i"
+    ),
     mye=list(
-        tum="a",
-        mac.pi="b",
-        AML="d",
         DC="DC",
-        pDC="pDC",
-        TAM="c",
-        mono.c="mono.c",
-        mono.nc="mono.nc"),
+        pDC="pDC", 
+        mono.nc=c("mono.nc"),
+        mono.c=c("mono.c", "b"),
+        macro="a",
+        moDC="c"
+    ),
     nkt=list(
-        Tha="a",
-        `NK/ILC`="b",
-        Tp="Tp",
-        Tex=c("Tex", "c"),
-        Tfh="Tfh",
-        Treg="Treg",
-        Tcn="Tcn",
+        NK="NK",
+        Thn="Thn",
         Tcm="Tcm",
-        Thn=c("Thn", "d"),
-        NK="NK/ILC"))
-kst <- lapply(names(lab), \(.) .jst(jst[[.]], lab[[.]]))
+        Treg="Treg",
+        Tfh=c("Tfh", "a"),
+        Tem=c("Tem", "b"),
+        Tcn=c("Tcn", "d"),
+        Tex=c("Tex", "Tra", "c")
+    )
+)
+lab$tum$tum <- setdiff(levels(jst$tum$clust), names(lab$tum))
+kst <- lapply(sub, \(.) .jst(jst[[.]], lab[[.]]))
 kst <- lapply(kst, \(.) {.$clust <- factor(.$clust, exclude="x"); .})
-names(kst) <- names(lab); kst$tum <- jst$tum
 sapply(kst, \(.) table(.$clust, exclude=NULL))
 ```
 
-```{r pbs}
+## visuals
+
+```{r vis}
 kid <- unlist(unname(lapply(kst, \(.) .$clust)))
-pbs <- aggregateAcrossCells(
-    x=logNormCounts(sce), ids=kid[colnames(sce)],
-    statistics="mean", use.assay.type="logcounts")
+sce$lv2 <- kid[match(colnames(sce), names(kid))]
+sce$lv1 <- ist$clust[match(colnames(sce), names(ist$clust))]
+lys <- lapply(split(seq(ncol(sce)), ist$clust), \(.) sce[, .])
+for (. in names(lys)) lys[[.]]$lv2 <- droplevels(lys[[.]]$lv2)
 ```
 
-```{r plt-pbs, fig.width=28, fig.height=4}
+### abundance
+
+```{r plt-jst-fq1, fig.width=12, fig.height=3}
 #| code-fold: true
-# selection
-n <- 10
-ks <- colnames(pbs)
-es <- logcounts(pbs)
-gs <- lapply(ks, \(i) {
-    j <- setdiff(ks, i)
-    fc <- es[,i]/rowMeans(es[,j])
-    names(tail(sort(fc), n))
-})
-# remove duplicates
-for (. in seq_along(gs)[-1])
-    gs[[.]] <- setdiff(gs[[.]], unlist(gs[seq(.-1)]))
-# wrangling
-ns <- sapply(gs, length)
-mx <- .z(t(es[gs <- unlist(gs), ]))
-pal <- setNames(.pal_kid[seq_along(ks)], ks)
-# plotting
-pheatmap::pheatmap(mx, 
-    cutree_rows=5, cutree_cols=5,
-    treeheight_row=5, treeheight_col=5,
-    fontsize=8, cellwidth=8, cellheight=8,
-    legend=FALSE, annotation_legend=FALSE,
-    cluster_rows=FALSE, cluster_cols=FALSE,
-    color=pals::coolwarm(), border_color=NA,
-    show_colnames=TRUE, gaps_col=cumsum(ns),  
-    annotation_colors=list(x=pal), annotation_names_col=FALSE,
-    annotation_col=data.frame(row.names=gs, x=rep.int(colnames(pbs), ns)))
+ps <- lapply(sub[sub != "tum"], \(.) .plt_fq(lys[[.]], "sid", "lv2", id=., h=TRUE))
+wrap_plots(ps, nrow=1)
 ```
+
+```{r plt-jst-fq2, fig.width=6, fig.height=3, fig.align="center"}
+#| code-fold: true
+ps <- lapply(sub[sub != "tum"], \(.) .plt_fq(lys[[.]], "lv2", "sid", id=.))
+ws <- sapply(ps, \(p) nlevels(p$data$Var1))
+wrap_plots(ps, guides="collect", widths=ws)
+```
+
+### markers
+
+::: {.panel-tabset}
+
+```{r plt-jst-mg, results="asis", fig.width=8, fig.height=3}
+#| code-fold: true
+ps <- lapply(sub[sub != "tum"], \(.) {
+    na <- setdiff(levels(lys[[.]]$lv2), names(gs <- .mgs[[.]]))
+    gs <- c(gs, lapply(setNames(na, na), \(.) c()))
+    .plt_dp(lys[[.]], "lv2", gs, hc=FALSE)
+})
+for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
+```
+
+:::
+
+### spatial
+
+::: {.panel-tabset}
+
+```{r plt-xy, results="asis", fig.width=6, fig.height=3, message=FALSE}
+#| code-fold: true
+df <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
+names(id) <- id <- names(cs <- split(seq(ncol(sce)), sce$sid))
+pal <- setNames(.pal_kid, levels(sce$lv2))
+l1 <- scale_fill_manual(NULL, values=.pal_sub)
+l2 <- scale_fill_manual(NULL, values=pal)
+ps <- lapply(id, \(.) {
+    se <- sce[, cs[[.]]]
+    (.plt_ps(df, se, "lv1", id=.) + l1) +
+    (.plt_ps(df, se, "lv2") + l2) +
+    plot_layout(nrow=1)
+})
+for (. in names(ps)) { cat("####", ., "\n"); print(ps[[.]]); cat("\n\n") }
+```
+
+:::
 
 ## appendix
 

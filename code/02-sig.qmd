@@ -34,12 +34,14 @@ sapply(gs, length)
 ### tumor
 
 ```{r tumor, results="hold"}
-df <- read.csv("data/sig/tum.csv")
-df <- split(df, df$cluster)
-gt <- lapply(df, \(fd) {
-    o <- order(fd$avg_log2FC)
-    tail(fd$gene[o], 200)
-})
+# df <- read.csv("data/sig/tum.csv")
+# df <- split(df, df$cluster)
+# gt <- lapply(df, \(fd) {
+#     o <- order(fd$avg_log2FC)
+#     tail(fd$gene[o], 200)
+# })
+df <- read.delim("data/sig/tum80.txt")
+gt <- split(df$gene, df$signature)
 rd <- append(rd, rep("tumor", length(gt)))
 names(gt) <- c(
     "Quiescent", "SOX11 network", "Immediate-early response", 
@@ -52,10 +54,10 @@ gs <- append(gs, gt)
 ### public
 
 ```{r public, results="hold"}
-use <- read_xlsx("data/sig/sig_use.xlsx")
+use <- readLines("data/sig/sig_use.txt")
 all <- read.csv("data/sig/sig_all.csv")
 all <- split(all$Gene.symbol, all$Signature)
-use <- setdiff(use[[1]], names(gs))
+use <- setdiff(use, names(gs))
 gt <- all[names(all) %in% use]
 rd <- append(rd, rep("public", length(gt)))
 sapply(gt, length)
@@ -85,7 +87,24 @@ gs <- append(gs, gt)
 
 ### T cells
 
-```{r}
+```{r tatlas}
+nm <- "data/sig/Chu2023.xlsx"
+gt <- lapply(names(is <- c(CD4=7, CD8=5)), \(.) {
+    df <- read_xlsx(nm, skip=1, sheet=is[[.]]) 
+    gt <- lapply(asplit(df, 2), \(.) .[!is.na(.)])
+    rd <- append(rd, rep("t-atlas", length(gt)))
+    setNames(gt, paste(names(gt), .))
+})
+gt <- lapply(gt, \(.) setNames(., gsub(":", "/", names(.))))
+gt <- lapply(gt, \(.) setNames(., gsub("\\sCD(4|8)$", "", names(.))))
+names(nm) <- nm <- unique(unlist(lapply(gt, names)))
+gt <- lapply(nm, \(x) unique(unlist(lapply(gt, \(y) y[[x]]))))
+rd <- append(rd, rep("t-atlas", length(gt)))
+gs <- append(gs, gt)
+sapply(gt, length)
+```
+
+```{r echo=FALSE, eval=FALSE}
 nm <- "data/sig/Chu2023.xlsx"
 for (. in names(is <- c(CD4=7, CD8=5))) {
     df <- read_xlsx(nm, skip=1, sheet=is[[.]]) 
@@ -95,7 +114,6 @@ for (. in names(is <- c(CD4=7, CD8=5))) {
     gs <- append(gs, gt)
 }
 ```
-
 
 ```{r tbl}
 # number of genes by signature

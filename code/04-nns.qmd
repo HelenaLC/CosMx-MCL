@@ -1,0 +1,411 @@
+# nns
+
+## preamble
+
+```{r load-deps, message=FALSE, warning=FALSE}
+library(RANN)
+library(arrow)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tidytext)
+library(spatstat.geom)
+library(spatstat.explore)
+source("code/_utils.R")
+```
+
+## loading
+
+```{r load-data}
+sce <- readRDS("outs/fil.rds")
+ist <- readRDS("outs/lv1.rds")
+jst <- readRDS("outs/lv2.rds")
+```
+
+## wrangling
+
+```{r prep-data}
+idx <- names(kid <- ist$clust)
+kid[kid == "epi"] <- "str"
+sce$lv1 <- kid[match(colnames(sce), idx)]
+kid <- lapply(jst, \(.) .$clust)
+idx <- names(kid <- unlist(unname(kid)))
+sce$lv2 <- kid[match(colnames(sce), idx)]
+```
+
+## context
+
+### radial
+
+```{r nns}
+cs <- split(colnames(sce), sce$sid)
+names(id) <- id <- names(cs)
+r <- 0.02; k <- 101
+# get radial neighborhood
+is <- lapply(id, \(sid) {
+    sub <- sce[, cs[[sid]]]
+    xy <- "Center(X|Y)_global_mm"
+    xy <- grep(xy, names(colData(sub)))
+    xy <- as.matrix(colData(sub)[xy])
+    nn <- nn2(xy, searchtype="radius", r=r, k=k)
+    is <- nn$nn.idx[, -1]; is[is == 0] <- NA; is
+})
+```
+
+### range
+
+```{r plt-ns, fig.width=7, fig.height=3.5}
+#| code-fold: true
+#| echo: -1
+par(mar=c(4,4,2,2))
+n <- unlist(lapply(is, \(.) rowSums(!is.na(.))))
+l <- sprintf("#cells in %sum radial neighborhood", r*1e3)
+hist(n, breaks=seq(-.5, max(n)+.5), xlab="", ylab="",  main=l)
+abline(v=quantile(n, c(.05, .95)), col="red", lw=2, lty=2)
+abline(v=m <- mean(n), col="red", lw=2); m
+```
+
+### quant
+
+```{r fqs}
+# quantify each neighborhood's
+# subpopulation composition
+fq <- lapply(id, \(.) {
+    ks <- (se <- sce[, cs[[.]]])$lv2
+    ks[is.na(ks)] <- "tum"
+    mx <- matrix(ks[is[[.]]], nrow=ncol(se))
+    mx[is.na(mx)] <- ""
+    names(kt) <- kt <- levels(sce$lv2)
+    ns <- sapply(kt, \(k) rowSums(mx == k))
+    data.frame(
+        prop.table(ns, 1),
+        row.names=colnames(se))
+}) |> bind_rows()
+fq[is.na(fq)] <- 0
+fq <- fq[colnames(sce), ]
+colData(sce)$fqs <- fq
+```
+
+### clust
+
+```{r clu}
+set.seed(260202)
+km <- kmeans(fq, centers=nk <- 10)$cluster
+names(km) <- rownames(fq)
+ns <- sprintf("%02d", seq_len(nk))
+ns <- factor(km, labels=paste0("N", ns))
+sce$ctx <- ns[match(colnames(sce), names(ns))]
+t(sapply(cs, \(.) table(ns[.]))); table(ns)
+```
+
+## density
+
+### est
+
+```{r den-tum-viz, warning=FALSE, fig.width=9, fig.height=6}
+# get point pattern using per-core 
+# convex hull as window of observation
+xy <- grep("global_mm", names(cd <- colData(sce)))
+cs <- split(colnames(sce), sce$sid)
+pp <- lapply(cs, \(.) {
+    ow <- ripras(xy <- as.matrix(cd[., xy]))
+    xy <- xy[which(cd$lv1[.] == "tum"), ]
+    pp <- ppp(xy[,1], xy[,2], window=ow)
+})
+# visualize kernel density estimate
+# of tumoral density across cores
+kd <- lapply(pp, density.ppp)
+par(mfrow=c(4, 5), mar=c(1,0,0,0))
+for (. in names(kd)) plot(kd[[.]], main=., col=pals::jet())
+```
+
+### bin
+
+```{r den-tum-bin, warning=FALSE, results="hold", fig.width=6, fig.height=4}
+# estimate tumoral density at
+# observed cellular coordinates
+fn <- lapply(pp, densityfun)
+ds <- lapply(names(fn), \(.) {
+    xy <- cd[cs[[.]], xy]
+    fn[[.]](xy[,1], xy[,2], drop=FALSE)
+})
+is <- match(colnames(sce), unlist(cs))
+df <- data.frame(colData(sce), kde=unlist(ds)[is])
+xs <- seq(min(ds <- .q(df$kde)), max(ds), l=26)
+df$bin <- cut(ds, breaks=xs, include.lowest=TRUE)
+sce$kde <- df$kde; sce$bin <- df$bin
+hist(ds, n=100, 
+    xlab="q-scaled tumoral density", 
+    ylab="# cells", main="")
+abline(v=xs, col="red")
+```
+
+## visuals
+
+### spatial
+
+::: {.panel-tabset}
+
+```{r plt-xy, results="asis", fig.dpi=100, fig.width=10, fig.height=3}
+idx <- split(colnames(sce), sce$sid)
+pol <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
+pal <- list(lv1=.pal_sub, lv2=.pal_kid, ctx=.pal_ctx)
+pal <- lapply(pal, \(.) scale_fill_manual(drop=FALSE, values=.))
+for (. in names(pal)) sce[[.]] <- factor(sce[[.]])
+for (. in names(idx)) {
+    se <- sce[, idx[[.]]]
+    ps <- lapply(names(pal), \(j) {
+        id <- if (j == names(pal)[2]) .
+        .plt_ps(pol, se, j, id=id, lw=0.1, lc="white") + pal[[j]]
+    })
+    gg <- wrap_plots(ps, nrow=1) & theme(plot.margin=margin(r=5))
+    cat("####", ., "\n"); print(gg); cat("\n\n")
+}
+```
+
+:::
+
+### comps
+
+::: {.panel-tabset}
+
+```{r plt-fq, results="asis", message=FALSE, fig.width=5, fig.height=3}
+#| code-fold: true
+ys <- list(sid=.pal_sid, lv1=.pal_sub, lv2=.pal_kid)
+ps <- lapply(setNames(names(ys), names(ys)), \(.) {
+    ps <- list(
+        .plt_fq(sce, "ctx", .) + scale_fill_manual(values=ys[[.]]),
+        .plt_fq(sce, ., "ctx") + scale_fill_manual(values=.pal_ctx))
+    wrap_plots(ps) & coord_equal(20, expand=FALSE)
+})
+for (. in names(ps)) {cat("####", ., "\n"); print(ps[[.]]); cat("\n\n")}
+```
+
+:::
+
+### density
+
+```{r plt-den-fq, fig.align="center", fig.width=12, fig.height=3}
+#| code-fold: true
+names(by) <- by <- c("sid", "lv2")
+pal <- list(sid=.pal_sid, lv2=.pal_kid)
+ps <- lapply(by, \(by) {
+    fd <- df |>
+        add_count(!!!sym(by)) |>
+        group_by(bin, !!!sym(by)) |>
+        summarise_at("n", sum) |>
+        group_by(!!!sym(by)) |>
+        mutate(p=n/sum(n))
+    names(fd)[2] <- "y"
+    if (by == "lv2") fd <- filter(fd, y != "tum")
+    ggplot(fd, aes(bin, n, fill=y)) +
+        coord_cartesian(expand=FALSE) +
+        scale_fill_manual(by, values=pal[[by]]) +
+        labs(x="tumoral density", y="frequency") +
+        geom_col(position="fill", key_glyph="point") +
+        .thm_fig_d("minimal", "f") + theme(
+            aspect.ratio=2/3,
+            axis.text=element_blank(),
+            axis.ticks=element_blank())
+}); wrap_plots(ps, nrow=1)
+```
+
+```{r den-lv2-lm, fig.align="center", fig.width=3, fig.height=3}
+#| code-fold: true
+fit <- by(
+    fd <- ps$lv2@data, paste(fd$y), 
+    \(.) lm(p~as.integer(bin), data=.))
+b <- sapply(fit, \(.) as.numeric(coef(.)[2]))
+. <- abs(b) > (th <- 0.005); b[.] <- th*sign(b[.])
+gg <- data.frame(k=names(b), b=100*b)
+gg <- filter(gg, abs(b) > 0.01)
+ggplot(gg, aes(b, reorder(k, b), fill=b)) +
+    scale_fill_gradientn(
+        limits=100*c(-th, th),
+        colors=rev(pals::brewer.rdbu(9))) +
+    labs(x="de/increase with density (capped)", y=NULL) +
+    .thm_fig_d("bw", "f") + theme(aspect.ratio=1) +
+    geom_col(width=0.8, show.legend=FALSE) +
+    coord_cartesian(xlim=100*c(-th, th))
+```
+
+```{r den-lv2-hm, fig.align="center", fig.width=6, fig.height=3}
+#| code-fold: true
+# wrangling
+mu <- df |>
+    pivot_longer(starts_with("fqs")) |>
+    group_by(name, bin) |>
+    summarize_at("value", mean) |>
+    group_by(name) |>
+    mutate_at("value", .z)
+# ordering
+yo <- mu |>
+    group_by(name) |>
+    slice_max(value, n=1, with_ties=FALSE) |>
+    arrange(bin, value) |>
+    pull(name)
+# plotting
+ggplot(mu, 
+    aes(bin, name, fill=value)) +
+    scale_fill_gradientn(
+        "z-scaled frequency in 20um radial\nneighborhood of tumor cells",
+        colors=rev(pals::brewer.puor(9)), 
+        limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
+    scale_y_discrete(NULL, limits=yo, labels=\(.) gsub("fqs\\.", "", .)) +
+    coord_cartesian(expand=FALSE) +
+    labs(x="tumoral density") +
+    geom_tile() +
+    .thm_fig_c("minimal") + theme(
+        aspect.ratio=1,
+        legend.position="top",
+        legend.title.position="top",
+        legend.title=element_text(hjust=0.5),
+        legend.key.height=unit(0.4, "lines"),
+        legend.key.width=unit(0.8, "lines"),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+### coloc
+
+```{r plt-col, fig.width=5, fig.height=5.5}
+#| code-fold: true
+cd <- colData(sce)[c("lv2")]
+df <- data.frame(cd, fq)
+mu <- df |>
+    group_by(lv2) |>
+    summarise(
+        across(where(is.numeric),
+        \(.) mean(., na.rm=TRUE)))
+# scaling
+mv <- mu |>
+    pivot_longer(-lv2) |>
+    group_by(name) |> 
+    mutate_at("value", .z)
+# wrangling
+mx <- pivot_wider(mv)
+my <- as.matrix(mx[, -1])
+rownames(my) <- mx[[1]]
+# plotting
+lab <- "z-scaled frequency of X in radial neighborhood of Y"
+pal <- circlize::colorRamp2(c(-2.5, 0, 2.5), c("navy", "ivory", "maroon"))
+set.seed(3); hm <- ComplexHeatmap::Heatmap(my, pal, name=lab,
+    row_title=NULL, 
+    column_title=NULL,
+    width=unit(10, "cm"), 
+    height=unit(10, "cm"),
+    km=10, column_km=10,
+    row_dend_width=unit(0.5, "cm"),
+    column_dend_height=unit(0.5, "cm"),
+    heatmap_legend_param=list(
+        direction="horizontal",
+        grid_height=unit(2, "mm"),
+        legend_width=unit(4, "cm"),
+        at=. <- seq(-2.5, 2.5, 0.5),
+        title_position="topcenter",
+        labels=ifelse(. %% 2 == 0, ., "")))
+ComplexHeatmap::draw(hm, heatmap_legend_side="top")
+```
+
+```{r plt-nns, fig.width=7, fig.height=3}
+#| code-fold: true
+cd <- colData(sce)[c("lv2")]
+df <- data.frame(fq, cd)
+fd <- pivot_longer(df, -names(cd))
+mu <- fd |>
+    group_by(lv2, name) |>
+    mutate_at("name", factor) |>
+    summarize_at("value", mean)
+mv <- filter(mu, name != "tum")
+xo <- mu |>
+    filter(name == "tum") |>
+    arrange(value) |> 
+    pull(lv2)
+ggplot(mu, aes(lv2, value, fill=name)) + 
+    ggtitle("cells in radial neighborhood of x") +
+ggplot(mv, aes(lv2, value, fill=name)) + 
+    ggtitle("excluding tumor fraction") +
+plot_layout(guides="collect") &
+    geom_col(position="fill", key_glyph="point", show.legend=TRUE) &
+    scale_fill_manual(NULL, drop=FALSE, values=.pal_kid) &
+    scale_x_discrete(limits=xo) &
+    .thm_fig_d("minimal", "f") & 
+    coord_equal(expand=FALSE) &
+    theme(aspect.ratio=2/3,
+        axis.title=element_blank(),
+        axis.text.y=element_blank(),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+```
+
+## labeling
+
+```{r lab}
+lab <- list(
+    TUM=c("N10", "N07"),
+    RIM=c("N01", "N08"),
+    MYE="N09",
+    MIX=c("N04", "N06"),
+    CAF="N02",
+    TCZ="N03",
+    EPI="N05"
+)
+lap <- setNames(rep.int(names(lab), sapply(lab, length)), unlist(lab))
+sce$cty <- factor(lap[match(sce$ctx, names(lap))], names(lab))
+table(sce$cty, sce$ctx, useNA="ifany")
+```
+
+::: {.panel-tabset}
+
+```{r plt-fq-, results="asis", message=FALSE, fig.width=5, fig.height=3}
+#| code-fold: true
+ys <- list(sid=.pal_sid, lv1=.pal_sub, lv2=.pal_kid)
+ps <- lapply(setNames(names(ys), names(ys)), \(.) {
+    ps <- list(
+        .plt_fq(sce, "cty", ., hc=. == "sid") + scale_fill_manual(values=ys[[.]]),
+        .plt_fq(sce, ., "cty") + scale_fill_manual(values=.pal_ctx))
+    wrap_plots(ps) & coord_equal(20, expand=FALSE)
+})
+for (. in names(ps)) {cat("####", ., "\n"); print(ps[[.]]); cat("\n\n")}
+```
+
+:::
+
+::: {.panel-tabset}
+
+```{r plt-xy-, results="asis", fig.dpi=100, fig.width=10, fig.height=3}
+idx <- split(colnames(sce), sce$sid)
+pol <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
+pal <- list(lv1=.pal_sub, lv2=.pal_kid, cty=.pal_ctx)
+pal <- lapply(pal, \(.) scale_fill_manual(drop=FALSE, values=.))
+for (. in names(pal)) sce[[.]] <- factor(sce[[.]])
+for (. in names(idx)) {
+    se <- sce[, idx[[.]]]
+    ps <- lapply(names(pal), \(j) {
+        id <- if (j == names(pal)[2]) .
+        .plt_ps(pol, se, j, id=id, lw=0.1, lc="white") + pal[[j]]
+    })
+    gg <- wrap_plots(ps, nrow=1) & theme(plot.margin=margin(r=5))
+    cat("####", ., "\n"); print(gg); cat("\n\n")
+}
+```
+
+:::
+
+## appendix
+
+### saving
+
+```{r save-data}
+saveRDS(sce, "outs/nns.rds")
+```
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::

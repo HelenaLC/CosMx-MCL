@@ -3,17 +3,20 @@
 ## preamble
 
 ```{r load-deps, message=FALSE, warning=FALSE}
+library(arrow)
 library(scuttle)
 library(HDF5Array)
+library(patchwork)
 library(SingleCellExperiment)
 source("code/_utils.R")
-set.seed(251103)
+set.seed(260202)
 ```
 
 ## loading
 
 ```{r load-data}
-(sce <- readRDS("outs/fil.rds"))
+sce <- readRDS("outs/fil.rds")
+(sce <- logNormCounts(sce))
 dim(pbs <- readRDS("outs/pbs.rds"))
 ```
 
@@ -24,7 +27,7 @@ run <- !file.exists(out <- "outs/ist.rds")
 ```
 
 ```{r clu, eval=run, message=FALSE, warning=FALSE, results="hide"}
-ist <- .ist(sce, pbs=pbs, nk=c(4, 8), ns=c(1e4, 2e4, 1e5)/2)
+ist <- .ist(sce, pbs=pbs, nk=c(8, 12), ns=c(1e4, 2e4, 1e5)/2)
 ```
 
 ```{r echo=FALSE}
@@ -34,22 +37,46 @@ if (!run) ist <- readRDS(out) else saveRDS(ist, out)
 ```{r tbl}
 ks <- intersect(letters, unique(ist$clust))
 ks <- c(ks, sort(colnames(pbs)))
-ist$clust <- factor(ist$clust, ks)
+ks <- ist$clust <- factor(ist$clust, ks)
+sce$ist <- ks[match(colnames(sce), names(ks))]
 table(ist$clust); nlevels(ist$clust)
 ```
 
 ## visuals
 
+### embedding
+
 ```{r plt-fp, fig.width=3, fig.height=3.5}
 .plt_fp(ist)
 ```
 
-```{r plt-fq, fig.width=4, fig.height=3}
-#| code-fold: true
-sce$ist <- (kid <- ist$clust)[match(colnames(sce), names(kid))]
-.plt_fq(sce, "sid", "ist", id="all", h=TRUE) + theme(aspect.ratio=1) 
-```
+### markers
 
+```{r plt-mg1, fig.width=12, fig.height=3}
+gs <- list(c(
+    "FDCSP", "CLU", "CR2", "CXCL13", "VCAM1",
+    "CD34", "CD93", "VWF", "HEY1", "LYVE1", "PROX1",
+    "COL1A1", "COL1A2", "COL3A1", "COL4A1", "COL5A1",
+    "KRT5", "KRT7", "KRT14", "KRT16", "KRT17", "KRT19",
+    "IGHA1", "IGHA2", "IGHD", "IGHE", "IGHM", "IRF4", "MZB1"),
+    tum=c(
+        "CIITA", "CD19", "CD83", "MS4A1",
+        "SOX10", "SOX11", "CCND1", "TCL1A",
+        "MKI67", "TOP2A", "TUBB4A", "TUBB4B"),
+    mye=c(
+        "HLA-DPA1", "HLA-DPB1", "HLA-DQB1",
+        "MMP1", "MMP3", "MMP9", "MMP12", "MMP14",
+        "APOE", "LYZ", "SELENOP", "S100A8","S100A9",
+        "CLEC4C", "CLEC9A", "CLEC10A", "IRF7", "IRF8",
+        "CD14", "CD68", "CD163", "C1QA", "C1QB", "C1QC"),
+    nkt=c(
+        "ICOS", "BCL6", "FOXP3", "CTLA4",
+        "CD2", "CD3D", "CD3E", "CD3G", "CD4", "CD40LG", 
+        "CD8A", "CD8B", "GZMA", "GZMB", "GZMH", "GZMK"))
+na <- setdiff(levels(sce$ist), names(gs))
+gs <- c(lapply(setNames(na, na), \(.) c()), gs)
+.plt_dp(sce, "ist", gs, hc=TRUE)
+```
 
 ::: {.panel-tabset}
 
@@ -62,14 +89,63 @@ for (. in names(ps)) {cat("###",.,"\n"); print(ps[[.]]); cat("\n\n")}
 
 ## labeling
 
-```{r lab}
-lab <- list(
-    tum=c("tum", "a", "b", "c", "g", "h"),
-    nkt="nkt", mye=c("mye", "e"), str=c("d", "f"))
-jst <- .jst(ist, lab)
-table(ist$clust, jst$clust)
-(ns <- table(jst$clust))
-round(100*prop.table(ns), 2)
+```{r lab, results="hold"}
+lab <- list(epi="b", nkt="nkt", mye=c("mye", "d"), str=c("c", "e"))
+lab$tum <- setdiff(levels(ist$clust), unlist(lab))
+sce$lv1 <- ks <- (jst <- .jst(ist, lab))$clust
+# tabulate assignments
+ns <- table(ks, useNA="ifany")
+fq <- round(100*prop.table(ns), 2)
+table(ist$clust, ks, useNA="ifany")
+rbind(`#`=ns, `%`=fq)
+```
+
+
+## visuals
+
+### spatial
+
+::: {.panel-tabset}
+
+```{r plt-xy, results="asis", fig.width=6, fig.height=3, message=FALSE}
+#| code-fold: true
+df <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
+names(id) <- id <- names(cs <- split(seq(ncol(sce)), sce$sid))
+l1 <- scale_fill_manual(NULL, limits=levels(sce$ist), drop=FALSE, values=.pal_kid)
+l2 <- scale_fill_manual(NULL, limits=names(.pal_sub), drop=FALSE, values=.pal_sub)
+ps <- lapply(id, \(.) {
+    se <- sce[, cs[[.]]]
+    (.plt_ps(df, se, "ist", id=.) + l1) +
+    (.plt_ps(df, se, "lv1") + l2) +
+    plot_layout(nrow=1)
+})
+for (. in names(ps)) { cat("####", ., "\n"); print(ps[[.]]); cat("\n\n") }
+```
+
+:::
+
+### composition
+
+```{r plt-fq1, fig.width=4, fig.height=3}
+#| code-fold: true
+ps <- list(
+    .plt_fq(sce, "ist", "sid", id="all"),
+    .plt_fq(sce, "lv1", "sid"))
+ws <- sapply(ps, \(.) nlevels(.@data$Var1))
+wrap_plots(ps,
+    nrow=1, widths=ws, guides="collect") & 
+    scale_fill_manual(NULL, values=.pal_sid)
+```
+
+```{r plt-fq2, fig.width=8, fig.height=3}
+#| code-fold: true
+p <- .plt_fq(sce, "sid", "ist", id="all", h=TRUE) +
+    scale_fill_manual(NULL, values=.pal_kid) 
+o <- p@scales$scales[[1]]$limits
+o <- scale_x_discrete(limits=o)
+q <- .plt_fq(sce, "sid", "lv1", h=TRUE) + o +
+    scale_fill_manual(NULL, values=.pal_sub)
+wrap_plots(p, q, nrow=1) & theme(aspect.ratio=1)
 ```
 
 ## appendix

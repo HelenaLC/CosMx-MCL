@@ -6,69 +6,102 @@
 library(qs)
 library(Seurat)
 library(scuttle)
+library(patchwork)
 library(SingleCellExperiment)
 source("code/_utils.R")
 ```
 
 ## loading
 
-```{r load-data}
+```{r load-data, warning=FALSE}
 qs <- list.files("data/ref", "qs$", full.names=TRUE)
 names(qs) <- gsub("\\.qs", "", basename(qs))
 se <- lapply(qs, \(.) {
     so <- qread(.)
     se <- as.SingleCellExperiment(so)
     logcounts(se) <- NULL
-    reducedDims(se) <- list()
+    dr <- tail(reducedDims(se), 1)[[1]]
+    reducedDims(se) <- list(UMAP=dr)
     gs <- VariableFeatures(so)
     gs <- rownames(se) %in% gs
     rowData(se)$hvg <- gs
     se
-}); sapply(se, ncol)
+}); sapply(se, dim)
 ```
 
 ## labeling
 
-```{r mye}
+### nkt
+
+```{r nkt, results="hold"}
+old <- c("0","1","2","3","4","5","6","7","8","9","11","12","13","14","15","17","18")
+nev <- c(
+    "CD16pos NK","CD4 TCM TFH","TEMRA","CD4 TN","CD8 TPEX","CD4 TREG",
+    "CD4 TCM TH2","NK-like T","NK ILC3","CD8 TEX","CD4 TCM","CD8 TEM",
+    "CD16neg NK","CD8 TN","MAIT","Cycling T","IFN responding")
+new <- list(
+    NK=c("CD16neg NK", "CD16pos NK", "NK ILC3"),
+    Tfh="CD4 TCM TFH", Treg="CD4 TREG",
+    Tcm=c("CD4 TCM TH2", "CD4 TCM"),
+    Tex=c("CD8 TPEX", "CD8 TEX"), 
+    Thn="CD4 TN", Tcn="CD8 TN",
+    Tra="TEMRA", Tem="CD8 TEM")
+new <- setNames(rep.int(names(new), sapply(new, length)), unlist(new))
+lap <- se$nkt$lap <- nev[match(se$nkt$ident, old)]
+lab <- se$nkt$lab <- new[match(lap, names(new))]
+table(lab, exclude=NULL)
+table(lap[is.na(lab)])
+```
+
+### mye
+
+```{r mye, results="hold"}
 old <- c("0","1","2","3","4","5","6","7","8","9","10","11")
-new <- c(
+nev <- c(
     "Classical_monocytes", "Class. monocytes_HLA", 
     "Non-class. monocytes", "Class. monocytes_SELL", 
     "Class. monocytes_ribo", "DC2", "Class. monocytes_IFNresp", 
     "pDC_1", "Progenitor cells", "Platelets", "pDC_2", "DC1")
-nev <- list(
+new <- list(
     mono.c=c("Classical_monocytes",
         "Class. monocytes_SELL", "Class. monocytes_HLA",
         "Class. monocytes_ribo", "Class. monocytes_IFNresp"),
     mono.nc="Non-class. monocytes",
     pDC=c("pDC_2", "pDC_1"),
     DC=c("DC1", "DC2"))
-nev <- setNames(rep.int(names(nev), sapply(nev, length)), unlist(nev))
-lab <- new[match(se$mye$ident, old)]
-lab <- nev[match(lab, names(nev))]
-table(se$mye$lab <- lab, exclude=NULL)
+new <- setNames(rep.int(names(new), sapply(new, length)), unlist(new))
+lap <- se$mye$lap <- nev[match(se$mye$ident, old)]
+lab <- se$mye$lab <- new[match(lap, names(new))]
+table(lab, exclude=NULL)
+table(lap[is.na(lab)])
 ```
 
-```{r nkt}
-old <- c("0","1","2","3","4","5","6","7","8","9","11","12","13","14","15","17","18")
-new <- c(
-    "CD16pos NK","CD4 TCM TFH","TEMRA","CD4 TN","CD8 TPEX","CD4 TREG",
-    "CD4 TCM TH2","NK-like T","NK/ILC","CD8 TEX","CD4 TCM","CD8 TEM",
-    "CD16neg NK","CD8 TN","MAIT","Cycling T","IFN responding")
-nev <- list(
-    "NK/ILC"=c("CD16neg NK", "CD16pos NK", "NK ILC3"),
-    Tcm=c("CD4 TCM_TH2", "CD4 TCM"),
-    Tex=c("CD8 TPEX", "CD8 TEX"),
-    Tc=c("CD8 TEM", "TEMRA"),
-    Tfh="CD4 TCM TFH",
-    Treg="CD4 TREG",
-    Tp="Cycling T",
-    Thn="CD4 TN",
-    Tcn="CD8 TN")
-nev <- setNames(rep.int(names(nev), sapply(nev, length)), unlist(nev))
-lab <- new[match(se$nkt$ident, old)]
-lab <- nev[match(lab, names(nev))]
-table(se$nkt$lab <- lab, exclude=NULL)
+### tum
+
+```{r tum, results="hold"}
+old <- c("0","1","2","3","4","5","6","7","8","9")
+nev <- c(
+    "Quiescent", "SOX11 network", "Immediate-early response",
+    "Memory/nnMCL", "Reactivated memory B cell", "Pre/Pro B cell",
+    "MYC pathway", "BCR signaling/NFKB pathway", "S-Phase", "G2/M")
+new <- list(
+    tum.low=c(
+        "Quiescent", "Immediate-early response", "Memory/nnMCL", 
+        "Reactivated memory B cell", "Pre/Pro B cell"),
+    tum.act=c("SOX11 network", "MYC pathway", "BCR signaling/NFKB pathway"),
+    tum.pro=c("S-Phase", "G2/M"))
+new <- setNames(rep.int(names(new), sapply(new, length)), unlist(new))
+lap <- se$tum$lap <- nev[match(se$tum$seurat_clusters, old)]
+lab <- se$tum$lab <- new[match(lap, names(new))]
+table(lab, exclude=NULL)
+table(lap[is.na(lab)])
+```
+
+```{r plt, fig.width=10, fig.height=4}
+#| code-fold: true
+wrap_plots(nrow=1, lapply(se, \(x) wrap_plots(lapply(c("lap", "lab"), \(y) .plt_dr(x, y)), ncol=1))) &
+    guides(col=guide_legend(NULL, override.aes=list(size=1.5))) &
+    theme(legend.justification=c(0, 0.5))
 ```
 
 ## pooling
@@ -85,6 +118,7 @@ dim(mx <- normalizeCounts(mx, log=FALSE))
 
 ```{r pbs-one}
 id <- rep.int(names(se), sapply(se, ncol))
+id[unlist(lapply(se, \(.) is.na(.$lab)))] <- NA
 pb <- summarizeAssayByGroup(mx, id, statistics="mean")
 head(pb <- assay(pb))
 ```

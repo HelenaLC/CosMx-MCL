@@ -16,9 +16,10 @@ source("code/_utils.R")
 ## loading
 
 ```{r load-data}
-# drop problematic core
 sce <- readRDS("outs/raw.rds")
-(sce <- sce[, sce$sid != "032LNd"])
+# drop problematic cores
+ex <- c("032LNd", "041SOd", "042SOd")
+(sce <- sce[, !sce$sid %in% ex])
 ```
 
 ## quality

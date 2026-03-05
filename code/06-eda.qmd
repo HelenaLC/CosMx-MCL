@@ -1,0 +1,230 @@
+# eda
+
+## preamble
+
+```{r load-deps, message=FALSE, warning=FALSE}
+library(scran)
+library(scater)
+library(scuttle)
+library(pheatmap)
+library(BiocParallel)
+library(SingleCellExperiment)
+source("code/_utils.R")
+bp <- MulticoreParam(4)
+set.seed(260205)
+```
+
+## loading
+
+```{r load-data}
+(sce <- readRDS("outs/pro.rds"))
+```
+
+## reduction
+
+```{r plt-map, message=FALSE, fig.width=6, fig.height=5}
+#| code-fold: true
+.plt_dr(sce, "pid") + scale_color_manual(values=.pal_pid) +
+.plt_dr(sce, "gid") + scale_color_manual(values=.pal_gid) +
+.plt_dr(sce, "typ") + scale_color_manual(values=.pal_typ) +
+.plt_dr(sce, "lv1") + scale_color_manual(values=.pal_sub) +
+    plot_layout(nrow=2) & theme(
+        aspect.ratio=1,
+        plot.margin=margin(l=5, b=5),
+        legend.justification=c(0, 0.5))
+```
+
+## tumor
+
+```{r}
+sub <- sce[, which(sce$lv2 == "tum")]
+mtx <- counts(sub)[c("CCND1", "SOX11"), ] > 0
+c(rowMeans(mtx), both=mean(colAlls(mtx)))
+```
+
+## signatures
+
+```{r sig}
+sig <- altExp(sce, "UCell")
+# order contexts by tumor fraction
+xo_ctx <- scale_x_discrete(limits=levels(sce$cty))
+xo_bin <- scale_x_discrete(limits=levels(sce$bin))
+# order cores by proliferation proxy
+mv <- by(assay(sig)["S-Phase", idx <- which(sig$lv2 == "tum")], sig$sid[idx], mean)
+xo_sid <- scale_x_discrete(limits=names(mv)[order(mv)])
+```
+
+```{r echo=FALSE}
+.plt_cor <- \(se) {
+    pal <- rev(pals::brewer.puor(99))
+    pheatmap::pheatmap(cor(t(assay(se))),
+        main="inter-signature correlation",
+        cellwidth=10, cellheight=10,
+        treeheight_row=20, treeheight_col=20, 
+        fontsize=9, color=pal, border_color=NA)
+}
+.plt_avg <- \(se, by) {
+    df <- data.frame(t(assay(se)), colData(se), check.names=FALSE)
+    fd <- pivot_longer(df, all_of(rownames(se)))
+    mu <- fd |>
+        filter(!is.na(!!sym(by))) |>
+        group_by(name, !!sym(by)) |>
+        summarise_at("value", mean) |>
+        group_by(name) |>
+        mutate_at("value", .z)
+    mx <- pivot_wider(mu)
+    my <- as.matrix(mx[, -1])
+    rownames(my) <- mx[[1]]
+    ggplot(mu, aes(.data[[by]], name, fill=value)) + geom_tile() +
+        scale_fill_gradientn(
+            "z-scaled\nmean UCell", 
+            colors=rev(pals::brewer.rdgy(99)),
+            limits=c(-2.5, 2.5), breaks=seq(-2, 2, 2)) +
+        scale_x_discrete(limits=.xo(my)) +
+        scale_y_discrete(limits=.yo(my)) +
+        coord_equal(expand=FALSE) +
+        .thm_fig_c("minimal") + theme(
+            axis.title=element_blank(),
+            axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+}
+```
+
+```{r sig-nkt}
+.sig <- sig[rowData(sig)$typ == "t-atlas", which(sig$lv1 == "nkt")]
+```
+
+```{r sig-nkt-hm, fig.width=10, fig.height=4}
+#| code-fold: true
+.plt_avg(.sig, "lv2") + 
+.plt_avg(.sig, "cty") + xo_ctx +
+.plt_avg(.sig, "sid") + xo_sid +
+plot_layout(guides="collect")
+```
+
+```{r sig-tum}
+.sig <- sig[rowData(sig)$typ != "t-atlas", which(sig$cty %in% "TUM")]
+```
+
+```{r sig-tum-hm, fig.width=10, fig.height=5}
+#| code-fold: true
+.plt_avg(.sig, "sid") + xo_sid +
+plot_layout(guides="collect")
+```
+
+## signaling
+
+```{r ccc}
+(x <- altExp(sce, "COMMOT"))
+```
+
+```{r plt-hm}
+#| code-fold: true
+.plt_hm <- \(df, gs, x, xo=TRUE, yo=TRUE, ax=TRUE) {
+    # wrangling
+    mu <- df |>
+        group_by(!!!sym(x)) |>
+        summarise(across(all_of(gs), mean))
+    # scaling
+    fd <- mu |>
+        mutate(across(all_of(gs), .z)) |>
+        pivot_longer(all_of(gs))
+    # ordering
+    mx <- pivot_wider(fd)
+    my <- as.matrix(mx[, -1])
+    rownames(my) <- seq(nrow(my))
+    xo <- if (xo) scale_x_discrete(limits=mx[[1]][as.integer(.xo(my))])
+    yo <- if (yo) scale_y_discrete(limits=.yo(my))
+    # aesthetics
+    ax <- if (ax) theme(
+        axis.title.x=element_blank(),
+        axis.text.x=element_text(angle=45, vjust=1, hjust=1)) else
+        theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())
+    # plotting
+    ggplot(fd, aes(.data[[x]], name, fill=value)) +
+        scale_fill_gradientn(
+            "z-scaled\nmean score",
+            colors=rev(pals::brewer.rdgy(9)),
+            limits=c(-2.5,2.5), breaks=seq(-2,2,2)) +
+        labs(y=NULL) + coord_equal(2/3, expand=FALSE) + 
+        geom_tile() + xo + yo + .thm_fig_c("bw") + ax
+}
+```
+
+### pws
+
+```{r pws}
+gs <- rownames(y <- x[rowData(x)$type == "Pathway", ])
+mx <- t(as.matrix(Reduce(`+`, assays(y))/2))
+df <- data.frame(colData(sce), mx, check.names=FALSE)
+```
+
+```{r pws-ctx, fig.width=15, fig.height=4}
+#| code-fold: true
+mu <- by(mx, df$cty, colMeans)
+mv <- as.matrix(array2DF(mu)[, -1])
+rownames(mv) <- names(mu)
+ps <- lapply(xs <- rownames(mv), \(i) {
+    j <- setdiff(xs, i)
+    b <- colMeans(mv[j, ])
+    gs <- names(tail(sort(mv[i, ]/b), 30))
+    .plt_hm(df, gs, "cty", xo=FALSE, ax=TRUE) + ggtitle(i)
+})
+wrap_plots(ps, nrow=1, guides="collect")
+```
+
+### lrs
+
+```{r lrs}
+gs <- rownames(y <- x[!rowData(x)$type %in% c("Total", "Pathway"), ])
+mx <- t(as.matrix(Reduce(`+`, assays(y))/2))
+df <- data.frame(colData(sce), mx, check.names=FALSE)
+```
+
+```{r lrs-ctx, fig.width=15, fig.height=8}
+#| code-fold: true
+mu <- by(mx, df$cty, colMeans)
+mv <- as.matrix(array2DF(mu)[, -1])
+rownames(mv) <- names(mu)
+ps <- lapply(xs <- rownames(mv), \(i) {
+    j <- setdiff(xs, i)
+    b <- colMeans(mv[j, ])
+    gs <- names(tail(sort(mv[i, ]/b), 30))
+    .plt_hm(df, gs, "cty", xo=FALSE, ax=TRUE) + ggtitle(i)
+})
+wrap_plots(ps, nrow=2, guides="collect")
+```
+
+```{r message=FALSE, fig.width=12, fig.height=7.5}
+ys <- altExp(sce, "UCell")
+ys <- assay(ys)["S-Phase", ]
+ys <- unname(.z(ys, th=1.5))
+ys[which(sce$lv2 != "tum")] <- NA
+dy <- range(ys, na.rm=TRUE)
+cs <- split(seq(ncol(sce)), sce$sid)
+names(id) <- id <- names(cs)
+ps <- lapply(id, \(.) {
+    se <- sce[, cs[[.]]]
+    ys <- ys[cs[[.]]]
+    o <- order(abs(ys), na.last=FALSE)
+    .plt_xy(se[, o], ys[o], s=0.2, id=., na=TRUE)
+})
+wrap_plots(ps[xo_sid$limits], 
+    nrow=3, guides="collect") &
+    #theme(legend.position="none") &
+    scale_color_gradientn(
+        na.value="lightgrey", limits=dy,
+        colors=c("cyan", "navy", "magenta"))
+```
+
+## appendix
+
+::: {.callout-note icon=false, collapse=true}
+
+### session
+
+```{r sess-info}
+#| code-fold: false
+sessionInfo()
+```
+
+:::
