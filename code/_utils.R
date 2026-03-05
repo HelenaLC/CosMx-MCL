@@ -10,10 +10,15 @@
 .pal_sid <- unname(pals::trubetskoy())
 .pal_div <- c("turquoise4", "turquoise", "grey95", "magenta", "magenta4")
 
-.pal_pid <- c(pals::tol(12), "grey50")
+.pal_sub <- c(
+    epi="lightgrey",
+    mye="turquoise", 
+    nkt="gold", 
+    str="deeppink", 
+    tum="darkslateblue")
 .pal_typ <- c(LN="#56B4E9", SO="#009E73", NP="#F0E442", EY="#D55E00", TO="#0072B2")
 .pal_gid <- c(m="lightsteelblue", n="khaki", d="indianred", t="darkseagreen")
-.pal_sub <- c(tum="navy", nkt="gold", mye="turquoise", str="deeppink")
+.pal_pid <- c(pals::tol(12), "grey50")
 
 .pal_ctx <- pals::brewer.set3(10)
 
@@ -157,7 +162,7 @@
 }
 
 # relabel 'InSituType' clustering results
-.jst <- \(x, y) {
+.jst <- \(x, y, na="xxx") {
     df <- if (is.list(y)) {
         old <- unlist(y)
         int <- sapply(y, length)
@@ -167,6 +172,7 @@
     i <- x$clust
     j <- df[[2]][match(i, df[[1]])]
     j[.] <- i[. <- is.na(j)]
+    j[j == na] <- NA
     names(j) <- names(i)
     x$clust <- j
     
@@ -175,6 +181,10 @@
     j[.] <- i[. <- is.na(j)]
     colnames(x$logliks) <- j
     colnames(x$profiles) <- j
+    
+    mx <- x$profiles
+    ex <- colnames(mx) == na
+    x$profiles <- mx[, !ex]
     
     # i <- split(seq_along(j), j)
     # x$logliks <- sapply(i, \(.) rowMeans(x$logliks[, ., drop=FALSE]))
@@ -188,15 +198,26 @@
     xy <- as.matrix(cd[grep("global_mm", names(cd))])
     nn <- RANN::nn2(xy, k=k, searchtype="radius", r=r)
     is <- nn$nn.idx; is[is == 0] <- NA
-    apply(assay(sce, a), 1, \(y) {
+    apply(assay(x, a), 1, \(y) {
         z <- matrix(y[c(is)], nrow(is), ncol(is))
         rowMeans(z, na.rm=TRUE) 
     }) |> t() |> `colnames<-`(colnames(x))
 }
 
+# plt ----
+
+# dependencies
+suppressPackageStartupMessages({
+    library(dplyr)
+    library(tidyr)
+    library(ggplot2)
+    library(patchwork)
+    library(SingleCellExperiment)
+})
+
 # plot dimensionality reduction
 .plt_dr <- \(x, c, id=NULL, dr="UMAP", s=0.1, 
-    t=c("n", "z", "q"), th=2.5, qs=0.01) {
+    t=c("n", "z", "q"), th=2.5, qs=0.01, a=NULL) {
     library(ggplot2)
     library(ggrastr)
     library(SingleCellExperiment)
@@ -207,8 +228,10 @@
         i <- !sapply(as.list(colData(x)), f)
         xy <- colnames(df <- reducedDim(x, dr)[, c(1, 2)])
         df <- data.frame(colData(x)[i], df, check.names=FALSE)
-        if (length(c) == 1 && c %in% rownames(x)) 
-            df[[c]] <- logcounts(x)[c, ]
+        if (length(c) == 1 && c %in% rownames(x)) {
+            if (is.null(a)) a <- "logcounts"
+            df[[c]] <- assay(x, a)[c, ]
+        }
     }
     df <- df[sample(nrow(df)), ]
     if (is.numeric(df[[c]])) {
@@ -218,7 +241,7 @@
             },
             z={ # thresholded z-normalization
                 df[[c]] <- .z(df[[c]], th)
-                scale_color_gradient2(low="blue", mid="ivory", high="red")
+                scale_color_gradient2(low="turquoise", mid="lavender", high="deeppink")
             },
             q={ # upper/lower quantile scaling
                 df[[c]] <- .q(df[[c]], qs)
@@ -232,8 +255,65 @@
     } else {
         aes <- list(.thm_xy_d(s), scale_color_manual(values=.pal))
     }
+    suppressMessages(
     ggplot(df, aes(.data[[xy[1]]], .data[[xy[2]]], col=.data[[c]])) +
-        aes + if (!is.null(id)) ggtitle(.lab(id, nrow(df)))
+        (if (!is.null(id)) ggtitle(.lab(id, nrow(df)))) + aes + 
+        scale_x_continuous(expand=expansion(0.05)) +
+        scale_y_continuous(expand=expansion(0.05)) +
+        coord_cartesian(expand=TRUE) + theme(
+            aspect.ratio=1,
+            plot.margin=margin(2,2,2,2),
+            panel.border=element_rect(linewidth=0.2, fill=NA, color="grey"))
+    )
+}
+
+# dotplot of selected genes
+.plt_dp <- \(sce, id, gs, hc=FALSE) {
+    gs <- lapply(gs, intersect, rownames(sce))
+    ns <- sapply(gs, length)
+    gt <- unlist(gs)
+    mu <- scran::summaryMarkerStats(sce[gt, ], sce[[id]])
+    mu <- lapply(mu, \(.) data.frame(g=rownames(.), .))
+    ys <- "self.average"
+    mu <- mu |>
+        bind_rows(.id="k") |>
+        group_by(g) |>
+        mutate_at(ys, .z)
+    if (hc) {
+        mx <- mu |>
+            select(k, g, ys) |>
+            pivot_wider(
+                names_from="g",
+                values_from=ys)
+        my <- as.matrix(mx[, -1])
+        rownames(my) <- mx[[1]]
+        xo <- .yo(my)
+        yo <- .xo(my)
+        box <- NULL
+    } else {
+        xo <- gt
+        yo <- rev(names(gs))
+        s <- cumsum(ns)
+        n <- length(ns)
+        bb <- 0.5+data.frame(
+            xmin=rev(c(0,s[-n])), xmax=rev(s),
+            ymin=seq(n), ymax=c(0,seq(n)[-n]))
+        box <- geom_rect(
+            aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), bb,
+            inherit.aes=FALSE, fill=NA, col="black", linewidth=0.4)
+    }
+    mu <- mu |>
+        mutate_at("g", factor, xo) |>
+        mutate_at("k", factor, yo)
+    ggplot(mu, aes(g, k, col=self.average, size=self.detected)) + 
+        scale_color_gradient2(low="blue3", mid="grey95", high="red3") +
+        scale_size_continuous(breaks=seq(0, 1, .2), range=c(1, 5)) +
+        guides(col=guide_colorbar(order=1)) +
+        geom_point() + coord_equal() + box +
+        .thm_fig_c("minimal") + theme(
+            panel.grid=element_blank(),
+            axis.title=element_blank(),
+            axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
 }
 
 # gene x cluster heatmaps including look-up, joint & split markers
@@ -329,7 +409,7 @@
 # hl = logical/character vector; cells to highlight (others are 'blacked out')
 .plt_ps <- \(df, sce=NULL, c="white", a=1,
     t=c("n", "z", "q"), th=2.5, qs=0.01, 
-    hl=NULL, lw=0.05, lc="lightgrey", id=NULL) {
+    hl=NULL, lw=0.1, lc="lightgrey", id=NULL) {
     library(dplyr)
     library(ggplot2)
     library(SingleCellExperiment)
@@ -366,7 +446,10 @@
     } else if (c %in% names(df)) {
         if (!is.numeric(df[[c]])) {
             # discrete coloring
-            pal <- if (nlevels(df[[c]]) == 5) .pal_sub else .pal
+            n <- nlevels(df[[c]])
+            pal <- if (n == 5) .pal_sub else 
+                if (length(.pal) >= n) .pal else
+                    grDevices::colorRampPalette(.pal)(n) 
             if (is.null(names(pal))) {
                 names(pal) <- levels(df[[c]])
                 pal <- pal[!is.na(names(pal))]
@@ -562,90 +645,7 @@
         if (!is.null(id)) ggtitle(.lab(id, sum(ns)))
 }
 
-# align shape layer exported from napari with
-# local/global (FOV/tissue) cell coordinates
-# sce = 'SingleCellExperiment'
-# id = character string; shape identifier
-# dir = character string; directory housing shape files
-# xy_global/local = pattern matching tissue/FoV coordinates
-.align_shape <- \(sce, dir=".", 
-    xy_global="Center._global_px", 
-    xy_local="Center._local_px") {
-    # dependencies
-    library(dplyr)
-    library(SingleCellExperiment)
-    . <- c("md", "px", "mm")
-    . <- paste0(., ".csv")
-    . <- file.path(dir, .)
-    # get constants
-    df <- read.csv(.[1])
-    y_delta_mm <- df$y_delta_mm
-    x_delta_mm <- df$x_delta_mm
-    y_px_mm_ratio <- df$y_px_mm_ratio
-    x_px_mm_ratio <- df$x_px_mm_ratio
-    fov_id <- df$chosen_FOV
-    fov_px <- 4256
-    # get coordinates
-    xy_px <- read.csv(.[2])
-    xy_mm <- read.csv(.[3])
-    # select cells in reference FOV
-    cd <- data.frame(colData(sce)) |> 
-        dplyr::filter(fov == fov_id) |> 
-        select(cell_id, 
-            matches(xy_global), 
-            matches(xy_local)) |> 
-        slice_head(n=1)
-    # cd <- mutate(cd,
-    #     x_slide_px=x_slide_mm/x_px_mm_ratio,
-    #     y_slide_px=y_slide_mm/x_px_mm_ratio)
-    xy_global <- grep(xy_global, names(cd))
-    xy_local <- grep(xy_local, names(cd))
-    # compute location of the FOV on the slide in px via difference 
-    # between location of cell in FOV and slide; subtract FOV height
-    # from y-coordinates as origin is in the top-left corner
-    fov_px_x <- cd[[xy_global[1]]]-cd[[xy_local[1]]]
-    fov_px_y <- cd[[xy_global[2]]]-(fov_px-cd[[xy_local[2]]])
-    # convert position of the FOV's top left 
-    # corner within the slide from px to mm
-    fov_mm_x <- fov_px_x*x_px_mm_ratio
-    fov_mm_y <- fov_px_y*x_px_mm_ratio+fov_px*x_px_mm_ratio
-    # convert shape coordinates to fit objects frame of reference
-    xy <- dplyr::rename(
-        mutate(xy_mm, y_vals=-y_vals), 
-        y_global_mm="y_vals", x_global_mm="x_vals")
-    # move shape into right location using the 
-    # reference FOV's top-left corner as anchor
-    xy$y_global_mm <- xy$y_global_mm-xy$y_global_mm[1]+fov_mm_y-y_delta_mm 
-    xy$x_global_mm <- xy$x_global_mm-xy$x_global_mm[1]+fov_mm_x+x_delta_mm 
-    xy$x_global_px <- .mm2px(xy$x_global_mm)
-    xy$y_global_px <- .mm2px(xy$y_global_mm)
-    return(xy)
-}
-
-# subset 'SingleCellExperiment' by ROI's xy-coordinates;
-# in case an ROI spans multiple disconnected selections
-# (according to column 'id'), consider each separately
-.subset_shape <- \(se, df, xy="Center._global_px", id="shape_id") {
-    if (is.null(df[[id]])) df[[id]] <- 0
-    require(SummarizedExperiment, quiet=TRUE)
-    xy <- grep(xy, names(colData(se)))
-    cs <- by(df, df[[id]], \(fd) {
-        sp::point.in.polygon(
-            se[[xy[1]]], se[[xy[2]]], 
-            fd$x_global_px, fd$y_global_px) == 1
-    })
-    cs <- do.call(cbind, as.list(cs))
-    se[, rowAnys(cs)]
-}
-
-# aesthetics
-suppressPackageStartupMessages({
-    library(dplyr)
-    library(tidyr)
-    library(ggplot2)
-    library(patchwork)
-    library(SingleCellExperiment)
-})
+# aes ----
 
 # prettified plot title in the style of
 # 'title (N = count)' with bold 'title'
@@ -672,9 +672,9 @@ suppressPackageStartupMessages({
 }
 
 # base figure theme
-.thm_fig <- \(.="minimal") list(
-    get(paste0("theme_", .))(9),
-    theme(
+.thm_fig <- \(.="minimal") {
+    thm <- get(paste0("theme_", .))(9)
+    list(thm, theme(
         legend.key=element_blank(),
         plot.background=element_blank(),
         panel.background=element_blank(),
@@ -682,6 +682,7 @@ suppressPackageStartupMessages({
         panel.grid.minor=element_blank(),
         legend.background=element_blank(),
         plot.title=element_text(hjust=0.5)))
+}
 
 # discrete coloring
 .thm_fig_d <- \(., l=c("c", "f")) {
@@ -712,6 +713,66 @@ suppressPackageStartupMessages({
     coord_equal(), theme(
         plot.margin=margin(),
         plot.title=element_text(hjust=0.5),
-        panel.background=element_rect(linewidth=0.2, color="grey", fill=NA)))
+        panel.background=element_rect(fill=NA)))
 .thm_xy_d <- \(s=0.1) c(.thm_fig_d("void"), .thm_xy(s))
 .thm_xy_c <- \(s=0.1) c(.thm_fig_c("void"), .thm_xy(s))
+
+# mgs ----
+
+.mgs <- list(
+    nkt=list(
+        Thn=c(
+            "CD2", "CD3D", "CD3E", "CD3G", "CD4", "CD5", "CD6", "CD28", "CD44", # canonical
+            "LEF1", "TCF7", "LTB"), # naivety
+        Tcm=c("IL7R", "CCR7", "KLF2", "KLF3", "BACH2", "FOXP1", "IKZF1", "SATB1"),
+        Tfh=c("ICOS", "BCL6", "CXCL13", "CD40LG"),
+        Treg=c("TNFRSF4", "IL2RA", "FOXP3", "CTLA4"),
+        Tcn=c("CD8A", "CD8B"),
+        Tem=c("STAT4", "CX3CR1", "JUN", "JUNB", "CCL5", "IL10RA"),
+        Tex=c("HAVCR2", "TIGIT", "LAG3", "TOX", "PDCD1", "IFNG", 
+            "KLRG1", "PRF1", "CXCR6", "GLNY", "DUSP4", "EOMES",
+            "GZMA", "GZMB", "GZMH", "GZMK"),
+        NK=c("ENTPD1", "NKG7", "TBX21", "KLRB1", "KLRC3", "IL2RB", "CD7", "FOS", "FOSB")
+    ),
+    mye=list(
+        macro=c(
+            "CD14", "CD68", "CD163",
+            "MS4A4A", "MS4A6A", "MRC1", "SLC40A1", 
+            "IGF1", "SELENOP", "APOE"),
+        moDC=c(
+            "CSF1R", "TLR2", "TLR4", "ITGA9",
+            "MMP9", "MMP12", "MMP14", "LST1",
+            "ITGAX", "CTSD", "TREM2", "FCER1G"),
+        DC=c(
+            "CD1C", "XCR1", "LAMP3", "IDO1", "CLEC9A", "CLEC10A", "BATF3", 
+            "HLA-DPA1", "HLA-DPB1", "HLA-DQB1", "CIITA", "MARCH1"),
+        pDC=c("IRF4", "IRF7", "IRF8", "CR2", "FCRL2", "FCRL5", "CLEC4C"),
+        mono.nc=c("MARCO", "C1QA", "C1QB", "C1QC", 
+            "B2M", "AIF1", "BLVRB", "FCGR3A", "CX3CR1", "LILRB2"),
+        mono.c=c("FBP1", "PCK2", "LYZ", "S100A8","S100A9")
+    ),
+    str=list(
+        fib=c(
+            "COL1A1", "COL1A2", "COL3A1", "COL4A1", "COL5A1", 
+            "COL5A2", "COL6A3", "COL12A1", "COL14A1", "COL18A1"),
+        mCAF=c("FN1", "LAMA4", "DCN", "MMP1", "MMP2", "IGF2", "POSTN", "IGFBP5"),
+        FRCtcz=c("DNM1", "COL27A1", "FDCSP", "CLU", "CR2", "CXCL13"),
+        FRCcts=c("CCN1", "JUNB", "JUN", "FOS", "FOSB", "CCL2", "EGR1", "EGR3", "GBP1"),
+        FRCpv=c(
+            "PDGFRA", "PDGFRB", "VCAM1", "VEGFA", "NDRG2", 
+            "MYL9", "CCL19", "CCL21", "CXCL12", "NOTCH3"),
+        BEC=c(
+            "NOTCH4", "FLT1", "CLEC14A", "CDH5", "CD34", "CD93", 
+            "VWF", "HEY1", "DLL4", "CAV1"),
+        LEC=c("LYVE1", "PROX1", "CXCL1", "CXCL2"),
+        epi=c("KRT5", "KRT7", "KRT14", "KRT16", "KRT17", "KRT19")
+    ),
+    tum=list(
+        tum=c("CCND1", 
+            "CD79A", "CD79B", "BCL2", "CD5", 
+            "BCL6", "SOX10", "SOX11", "MYC", "TCL1A", 
+            "CIITA", "CD19", "CD83", "MS4A1", "BCL7A",
+            "CDK1", "MKI67", "TOP2A", "TUBB4A", "TUBB4B"),
+        PC=c("MZB1", "XBP1", "JCHAIN", "IGHA1", "IGHA2")
+    )
+)

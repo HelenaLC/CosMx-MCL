@@ -18,13 +18,7 @@ project:
   execute-dir: project
   render: 
     - code/index.qmd
-    - code/00*.qmd
-    - code/01*.qmd
-    - code/02*.qmd
-    - code/03*.qmd
-    - code/04*.qmd
-    - code/05*.qmd
-    - code/06*.qmd
+    - code/0*.qmd
     
 website:
   title: MCL
@@ -39,11 +33,10 @@ website:
       - href: code/02-ccc.qmd
       - href: code/02-ist.qmd
       - href: code/03-jst.qmd
-      - href: code/04-ctx.qmd
+      - href: code/04-nns.qmd
       - href: code/05-pro.qmd
-      - href: code/06-nns.qmd
-      - text: eda
-        menu:
-          - href: code/06-eda-ist.qmd
-          - href: code/06-eda-sig.qmd
-          - href: code/06-eda-ccc.qmd
+      - href: code/06-clu.qmd
+      - href: code/06-eda.qmd
+      # - text: foo
+      #   menu:
+      #     - href: code/bar.qmd

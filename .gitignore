@@ -1,10 +1,12 @@
 arch/
 meta/
 plts/
+figs/
 /.quarto/
 outs/*rds
 data/ref/*
 data/sig/*
 data/raw/*csv
+data/raw/*xlsx
 code/*_cache
 code/*rkdown
