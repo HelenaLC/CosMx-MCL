@@ -9,7 +9,7 @@ library(HDF5Array)
 library(patchwork)
 library(SingleCellExperiment)
 source("code/_utils.R")
-set.seed(260202)
+set.seed(260313)
 ```
 
 ## loading
@@ -90,7 +90,7 @@ for (. in names(ps)) {cat("###",.,"\n"); print(ps[[.]]); cat("\n\n")}
 ## labeling
 
 ```{r lab, results="hold"}
-lab <- list(epi="b", nkt="nkt", mye=c("mye", "d"), str=c("c", "e"))
+lab <- list(epi="f", nkt="nkt", mye=c("mye", "g"), str=c("a", "d"))
 lab$tum <- setdiff(levels(ist$clust), unlist(lab))
 sce$lv1 <- ks <- (jst <- .jst(ist, lab))$clust
 # tabulate assignments
@@ -113,39 +113,32 @@ df <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
 names(id) <- id <- names(cs <- split(seq(ncol(sce)), sce$sid))
 l1 <- scale_fill_manual(NULL, limits=levels(sce$ist), drop=FALSE, values=.pal_kid)
 l2 <- scale_fill_manual(NULL, limits=names(.pal_sub), drop=FALSE, values=.pal_sub)
-ps <- lapply(id, \(.) {
-    se <- sce[, cs[[.]]]
-    (.plt_ps(df, se, "ist", id=.) + l1) +
-    (.plt_ps(df, se, "lv1") + l2) +
-    plot_layout(nrow=1)
-})
+ps <- lapply(id, \(.) .plt_ps(df, sce[, cs[[.]]], "ist", id=., lw=0.05) + l1)
+qs <- lapply(id, \(.) .plt_ps(df, sce[, cs[[.]]], "lv1", id=., lw=0.05) + l2)
+ps <- mapply(p=ps, q=qs, \(p, q) wrap_plots(p, q, nrow=1))
 for (. in names(ps)) { cat("####", ., "\n"); print(ps[[.]]); cat("\n\n") }
 ```
 
 :::
 
-### composition
+### comp
 
-```{r plt-fq1, fig.width=4, fig.height=3}
+```{r plt-fq, message=FALSE, fig.width=9, fig.height=2.5}
 #| code-fold: true
 ps <- list(
-    .plt_fq(sce, "ist", "sid", id="all"),
+    .plt_fq(sce, "ist", "sid", "all"),
     .plt_fq(sce, "lv1", "sid"))
 ws <- sapply(ps, \(.) nlevels(.@data$Var1))
-wrap_plots(ps,
+p1 <- wrap_plots(ps,
     nrow=1, widths=ws, guides="collect") & 
     scale_fill_manual(NULL, values=.pal_sid)
-```
 
-```{r plt-fq2, fig.width=8, fig.height=3}
-#| code-fold: true
-p <- .plt_fq(sce, "sid", "ist", id="all", h=TRUE) +
-    scale_fill_manual(NULL, values=.pal_kid) 
-o <- p@scales$scales[[1]]$limits
-o <- scale_x_discrete(limits=o)
-q <- .plt_fq(sce, "sid", "lv1", h=TRUE) + o +
-    scale_fill_manual(NULL, values=.pal_sub)
-wrap_plots(p, q, nrow=1) & theme(aspect.ratio=1)
+o <- names(sort(prop.table(table(sce$lv1, sce$sid), 2)["tum", ]))
+p <- .plt_fq(sce, "sid", "ist", id="all", h=TRUE) + scale_fill_manual(NULL, values=.pal_kid) 
+q <- .plt_fq(sce, "sid", "lv1", h=TRUE) + scale_fill_manual(NULL, values=.pal_sub)
+p2 <- wrap_plots(p, q, nrow=1) & theme(aspect.ratio=1) & scale_x_discrete(limits=o)
+
+(p <- wrap_plots(p1, p2, nrow=1, widths=c(1, 2)))
 ```
 
 ## appendix

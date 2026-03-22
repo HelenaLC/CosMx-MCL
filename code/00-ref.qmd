@@ -45,7 +45,7 @@ new <- list(
     Tcm=c("CD4 TCM TH2", "CD4 TCM"),
     Tex=c("CD8 TPEX", "CD8 TEX"), 
     Thn="CD4 TN", Tcn="CD8 TN",
-    Tra="TEMRA", Tem="CD8 TEM")
+    Tem="CD8 TEM")
 new <- setNames(rep.int(names(new), sapply(new, length)), unlist(new))
 lap <- se$nkt$lap <- nev[match(se$nkt$ident, old)]
 lab <- se$nkt$lab <- new[match(lap, names(new))]
@@ -63,9 +63,12 @@ nev <- c(
     "Class. monocytes_ribo", "DC2", "Class. monocytes_IFNresp", 
     "pDC_1", "Progenitor cells", "Platelets", "pDC_2", "DC1")
 new <- list(
-    mono.c=c("Classical_monocytes",
-        "Class. monocytes_SELL", "Class. monocytes_HLA",
-        "Class. monocytes_ribo", "Class. monocytes_IFNresp"),
+    mono.c=c(
+        "Classical_monocytes",
+        "Class. monocytes_HLA",
+        "Class. monocytes_ribo",
+        "Class. monocytes_SELL",
+        "Class. monocytes_IFNresp"),
     mono.nc="Non-class. monocytes",
     pDC=c("pDC_2", "pDC_1"),
     DC=c("DC1", "DC2"))
@@ -90,6 +93,16 @@ new <- list(
         "Reactivated memory B cell", "Pre/Pro B cell"),
     tum.act=c("SOX11 network", "MYC pathway", "BCR signaling/NFKB pathway"),
     tum.pro=c("S-Phase", "G2/M"))
+new <- list(
+    tum.qui="Quiescent",
+    tum.low=c(
+        "Immediate-early response", "Memory/nnMCL", 
+        "Reactivated memory B cell", "Pre/Pro B cell"),
+    tum.myc="MYC pathway",
+    tum.sox="SOX11 network",
+    tum.bcr="BCR signaling/NFKB pathway",
+    tum.pro=c("S-Phase", "G2/M")
+)
 new <- setNames(rep.int(names(new), sapply(new, length)), unlist(new))
 lap <- se$tum$lap <- nev[match(se$tum$seurat_clusters, old)]
 lab <- se$tum$lab <- new[match(lap, names(new))]

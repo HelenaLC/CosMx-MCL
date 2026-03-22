@@ -8,7 +8,7 @@ library(scuttle)
 library(BiocParallel)
 library(SingleCellExperiment)
 source("code/_utils.R")
-bp <- MulticoreParam(4)
+bp <- SerialParam()
 ```
 
 ## loading
@@ -39,28 +39,6 @@ lapply(pbs, colnames); table(ist$clust)
 
 ```{r sel}
 mx <- normalizeCounts(ist$profiles)
-names(ks) <- ks <- unique(colnames(mx))
-mx <- sapply(ks, \(k) rowMeans(mx[, k, drop=FALSE]))
-sel <- lapply(ks, \(.) {
-    my <- mx[, setdiff(ks, .)]
-    fc <- apply(my, 2, \(x) mx[, .]/x)
-    fc[!is.finite(fc)] <- NA
-    fc <- rowMins(fc, na.rm=TRUE)
-    fc <- fc[!is.na(fc) & is.finite(fc) & fc > 2]
-    gs <- names(tail(sort(fc), 2e3))
-})
-sapply(ks, \(.) {
-    se <- sce[, names(which(ist$clust == .))]
-    gs <- intersect(rownames(se), sel[[.]])
-    summary(tot <- colSums(assay(se)[gs, ]))
-})
-# exclude Ig-related features for tumor subclustering
-sel$tum <- grepv("^IG(H|K|L)", sel$tum, invert=TRUE)
-sapply(sel, length)
-```
-
-```{r sel--, echo=FALSE, eval=FALSE}
-mx <- normalizeCounts(ist$profiles, log=TRUE)
 sel <- lapply(sub, \(i) {
     j <- setdiff(sub, i)
     i <- which(colnames(mx) == i)
@@ -68,22 +46,38 @@ sel <- lapply(sub, \(i) {
     b <- rowMeans(mx[, j, drop=FALSE])
     fc <- apply(a, 2, \(.) ./b)
     fc <- rowMeans(fc, na.rm=TRUE)
-    fc <- fc[is.finite(fc) & fc > 2]
+    fc <- fc[is.finite(fc) & fc > 1]
     names(tail(sort(fc), 2e3))
 })
+# exclude Ig-related features for tumor subclustering
+sel <- lapply(sel, \(.) grepv("^IG(H|K|L)", ., invert=TRUE))
+sapply(sel, length)
+# summary metrics
 sapply(sub, \(.) {
     se <- sce[, names(which(ist$clust == .))]
     gs <- intersect(rownames(se), sel[[.]])
     summary(tot <- colSums(assay(se)[gs, ]))
 })
-sapply(sel, length)
 ```
 
-```{r sel-, echo=FALSE, eval=FALSE}
+```{r plt-sel, warning=FALSE, fig.width=6, fig.height=3}
+UpSetR::upset(mx <- UpSetR::fromList(sel))
+```
+
+```{r fil-sel, results="hold"}
+# exclude features selected for 
+# more than two subsets, including tumor
+ex <- rowSums(mx) > 2 & mx[, "tum"] == 1
+length(ex <- unique(unlist(sel))[ex])
+sel <- lapply(sel, \(.) setdiff(., ex))
+sub <- sub[sub != "tum"]
+```
+
+```{r sel-eda, echo=FALSE, eval=FALSE}
 cat("MYE\n"); grepv("C1Q|HLA-D|APOE|CD14|CD68", sel$mye) |> sort()
 cat("\nSTR\n"); grepv("VWF|CD93|^COL|HEY1|LYVE|MARCO|KRT", sel$str) |> sort()
 cat("\nNKT\n"); grepv("^(CD2|CD3|CD4|CD8|GZM|FOXP3|TIGIT)", sel$nkt) |> sort()
-cat("\nTUM\n"); grepv("TOP|TUBB|MKI|CCND|SOX|IGH|MZB|IRF4|CIITA|CD19|CD83|MS4A1", sel$tum) |> sort()
+cat("\nTUM\n"); grepv("TOP|TUBB|MKI|CCND|SOX|MZB|CIITA|CD19|CD83|MS4A1", sel$tum) |> sort()
 ```
 
 ## clustering
@@ -94,11 +88,11 @@ run <- !file.exists(out <- "outs/jst.rds")
 
 ```{r clu, eval=run, message=FALSE, warning=FALSE, results="hide"}
 jst <- bplapply(sub, \(.) {
-    set.seed(260222)
+    set.seed(260317)
     se <- sce[, names(which(ist$clust == .))]
     ex <- colSums(assay(se)[sel[[.]], ] > 0) < 10
-    ns <- c(1e4, 2e4, 1e5)/ifelse(. == "tum", 2, 5)
-    nk <- if (. == "mye") seq(2, 4) else if (. != "nkt") seq(3, 9) else 0
+    ns <- c(1e4, 2e4, 1e5)/5#ifelse(. == "tum", 2, 5)
+    nk <- if (. == "str") seq(3, 9) else seq(2, 4)
     ist <- .ist(se[, !ex], nk=nk, ns=ns, gs=sel[[.]], pbs=pbs[[.]])
     ks <- intersect(letters, unique(ist$clust))
     ks <- c(ks, sort(colnames(pbs[[.]])))
@@ -113,45 +107,66 @@ if (!run) jst <- readRDS(out) else saveRDS(jst, out)
 
 ## visuals
 
-### embedding
+### reduction
 
-```{r plt-fp, fig.width=12, fig.height=3.5, warning=FALSE}
-wrap_plots(lapply(names(jst), \(.) .plt_fp(jst[[.]], .)), nrow=1)
+```{r plt-fp, fig.width=8, fig.height=3, warning=FALSE}
+wrap_plots(lapply(sub, \(.) .plt_fp(jst[[.]], .)), nrow=1)
 ```
 
-### abundance
+### comp
 
-```{r plt-ist-fq1, fig.width=12, fig.height=3}
-#| code-fold: true
-lapply(sub, \(.) {
+```{r plt-ist-fq1, message=FALSE, fig.width=6, fig.height=1.5}
+p <- lapply(sub, \(.) {
     kid <- droplevels(kid <- jst[[.]]$clust)
     sce$ist <- kid[match(colnames(sce), names(kid))]
-    .plt_fq(sce, "sid", "ist", id=., h=TRUE)
-}) |> wrap_plots(nrow=1)
+    .plt_fq(sce, "sid", "ist", id=.)
+})
+wrap_plots(p, nrow=1) & 
+    theme(aspect.ratio=1) &
+    scale_fill_manual(NULL, values=.pal_kid)
 ```
 
-```{r plt-ist-fq2, fig.width=6, fig.height=3, fig.align="center"}
+```{r plt-ist-fq2, message=FALSE, fig.width=2.5, fig.height=2}
 #| code-fold: true
 ps <- lapply(sub, \(.) {
     kid <- droplevels(kid <- jst[[.]]$clust)
     sce$ist <- kid[match(colnames(sce), names(kid))]
-    .plt_fq(sce, "ist", "sid", id=.)
+    .plt_fq(sce, "ist", "sid", id=.) +
+    scale_fill_manual(values=.pal_sid)
 }) 
 ws <- sapply(ps, \(p) nlevels(p$data$Var1))
 wrap_plots(ps, guides="collect", widths=ws)
+```
+
+```{r plt-ist-xy, message=FALSE, echo=FALSE, eval=FALSE, fig.width=8, fig.height=5}
+#| code-fold: true
+df <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
+names(id) <- id <- names(cs <- split(seq(ncol(sce)), sce$sid))
+l1 <- scale_fill_manual(NULL, values=.pal_sub)
+l2 <- scale_fill_manual(NULL, na.value="ivory", 
+    values=c("red", "ivory", "blue", "grey"))
+ps <- lapply(grepv("06", id), \(.) {
+    se <- sce[, cs[[.]]]
+    ks <- jst$mye$clust
+    ks <- ks[ks %in% c("c", "pDC")]
+    se$foo <- paste(ks[match(colnames(se), names(ks))])
+    se$foo[colnames(se) %in% names(which(ist$clust == "tum"))] <- "tum"
+    .plt_ps(df, se, "foo", id=.) + l2
+})
+wrap_plots(ps, nrow=1)
 ```
 
 ### markers
 
 :::: {.panel-tabset}
 
-```{r plt-de, results="asis", fig.align="default", fig.width=8, fig.height=3}
+```{r plt-ist-de, results="asis", fig.width=8, fig.height=3}
 #| code-fold: true
 lapply(sub, \(.) {
     cat("###",.,"\n:::{.panel-tabset}\n")
-    mx <- (kst <- jst[[.]])$profiles
     n1 <- ifelse(. == "str", 10, 20)
-    ps <- .plt_de(kst, "all", n1=n1, n2=80); names(ps)[1] <- "all"
+    ks <- levels((res <- jst[[.]])$clust)
+    ps <- .plt_de(res, "all", n1=n1, n2=100); names(ps)[1] <- "all"
     for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
     cat(":::\n")
 })
@@ -163,14 +178,18 @@ lapply(sub, \(.) {
 
 ```{r plt-ist-mg, results="asis", fig.width=8, fig.height=3}
 #| code-fold: true
+# include tumoral profile as reference
+sf <- sce[, names(which(ist$clust == "tum"))]; sf$. <- "tum"
+tm <- c("CCND1", "TUBB", "MKI67", "SOX11", "MYC", "TUBB4A", "MS4A1")
 ps <- lapply(sub, \(.) {
-    gs <- .mgs[[.]]
     se <- sce[, names(which(ist$clust == .))]
     ks <- droplevels(jst[[.]]$clust)
     se$. <- ks[match(colnames(se), names(ks))]
-    na <- setdiff(levels(ks), names(gs))
+    se <- cbind(se, sf)
+    na <- setdiff(levels(ks), names(gs <- .mgs[[.]]))
     gs <- c(gs, lapply(setNames(na, na), \(.) c()))
-    .plt_dp(se, ".", gs, hc=!. %in% c("nkt", "mye"))
+    gs[[1]] <- c(gs[[1]], tm)
+    .plt_dp(se, ".", gs, hc=TRUE)
 })
 for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
 ```
@@ -182,35 +201,17 @@ for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
 ```{r lab}
 lab <- list(
     str=list(
-        FRCtcz="a",
-        epi=c("b", "f"),
-        mCAF="c",
-        fib="d",
-        FRCpv="e",
-        BEC="g",
-        FRCcts="h",
-        LEC="i"
-    ),
+        FRCpv="a", LEC="b", FDC="c", mCAF="d", 
+        FRCcts="e", FRCtcz="f", epi="g", BEC="h"),
     mye=list(
-        DC="DC",
-        pDC="pDC", 
-        mono.nc=c("mono.nc"),
-        mono.c=c("mono.c", "b"),
-        macro="a",
-        moDC="c"
-    ),
+        mono="a", tum="c", 
+        mregDC="DC", pDC="pDC",
+        TAM.MMP=c("d", "mono.c"), 
+        TAM.C1Q="mono.nc",
+        TAM.GAL="b"),
     nkt=list(
-        NK="NK",
-        Thn="Thn",
-        Tcm="Tcm",
-        Treg="Treg",
-        Tfh=c("Tfh", "a"),
-        Tem=c("Tem", "b"),
-        Tcn=c("Tcn", "d"),
-        Tex=c("Tex", "Tra", "c")
-    )
-)
-lab$tum$tum <- setdiff(levels(jst$tum$clust), names(lab$tum))
+      Thn="a", Tpex="b", Tcn="Tcn", Tem="Tem", Tcm="Tcm", 
+      NK="NK", Tfh="Tfh", Treg="Treg", Tex="Tex"))
 kst <- lapply(sub, \(.) .jst(jst[[.]], lab[[.]]))
 kst <- lapply(kst, \(.) {.$clust <- factor(.$clust, exclude="x"); .})
 sapply(kst, \(.) table(.$clust, exclude=NULL))
@@ -219,65 +220,128 @@ sapply(kst, \(.) table(.$clust, exclude=NULL))
 ## visuals
 
 ```{r vis}
+sce$lv1 <- ist$clust[match(colnames(sce), names(ist$clust))]
 kid <- unlist(unname(lapply(kst, \(.) .$clust)))
 sce$lv2 <- kid[match(colnames(sce), names(kid))]
-sce$lv1 <- ist$clust[match(colnames(sce), names(ist$clust))]
-lys <- lapply(split(seq(ncol(sce)), ist$clust), \(.) sce[, .])
+sce$lv2[which(sce$lv1 == "tum")] <- "tum"
+sce$lv2 <- factor(sce$lv2, names(.pal_lv2))
+lys <- lapply(split(seq(ncol(sce)), ist$clust), \(.) 
+    sce[, intersect(., which(sce$lv2 != "tum"))])
 for (. in names(lys)) lys[[.]]$lv2 <- droplevels(lys[[.]]$lv2)
 ```
 
-### abundance
+### comp
 
-```{r plt-jst-fq1, fig.width=12, fig.height=3}
+```{r plt-lv1-fq, message=FALSE, fig.width=6, fig.height=2.5}
 #| code-fold: true
-ps <- lapply(sub[sub != "tum"], \(.) .plt_fq(lys[[.]], "sid", "lv2", id=., h=TRUE))
-wrap_plots(ps, nrow=1)
+sce$.lv1 <- sce$lv1
+sce$foo <- "average"
+sce$.lv1[sce$lv2 == "epi"] <- "epi"
+sce$.lv1 <- factor(sce$.lv1, names(.pal_sub))
+o <- names(sort(prop.table(table(sce$.lv1, sce$sid), 2)["tum", ]))
+p <- .plt_fq(sce, "sid", ".lv1", h=TRUE) + 
+    scale_x_discrete(limits=rev(o)) + 
+    theme(aspect.ratio=1)
+q <- .plt_fq(sce, "foo", ".lv1", h=TRUE, hc=FALSE) +
+    theme(aspect.ratio=1/length(unique(sce$sid)))
+(gg <- wrap_plots(p, q, ncol=1) & 
+    scale_fill_manual(NULL, values=.pal_sub))
 ```
 
-```{r plt-jst-fq2, fig.width=6, fig.height=3, fig.align="center"}
+```{r echo=FALSE, include=FALSE}
+ggsave("figs/lv1,fq.pdf", gg, units="cm", width=6, height=3.25)
+```
+
+```{r plt-lv2-fq1, message=FALSE, fig.width=6, fig.height=1.5}
+p <- lapply(sub, \(.) .plt_fq(lys[[.]], "sid", "lv2", id=.))
+q <- .plt_fq(sce[, which(sce$lv2 != "tum")], "sid", "lv2", id="non-tum")
+wrap_plots(c(list(q), p), nrow=1) & 
+    theme(aspect.ratio=1) &
+    scale_fill_manual(NULL, values=.pal_lv2)
+```
+
+```{r echo=FALSE, include=FALSE}
+ggsave("figs/lv2,fq1.pdf", units="cm", width=15, height=4)
+```
+
+```{r plt-lv2-fq2, message=FALSE, fig.width=2.5, fig.height=2}
 #| code-fold: true
-ps <- lapply(sub[sub != "tum"], \(.) .plt_fq(lys[[.]], "lv2", "sid", id=.))
+ps <- lapply(sub[sub != "tum"], \(.) {
+    gg <- .plt_fq(lys[[.]], "lv2", "sid", id=.)
+    xo <- gg@data |>
+        group_by(Var1) |>
+        mutate(p=Freq/sum(Freq)) |>
+        filter(Var2 == "122LNm") |>
+        arrange(p) |> pull(Var1)
+    gg + scale_x_discrete(limits=paste(xo)) +
+    scale_fill_manual(NULL, values=.pal_sid) 
+})
 ws <- sapply(ps, \(p) nlevels(p$data$Var1))
-wrap_plots(ps, guides="collect", widths=ws)
+(gg <- wrap_plots(ps, guides="collect", widths=ws))
+```
+
+```{r echo=FALSE, include=FALSE}
+ggsave("figs/lv2,fq2.pdf", units="cm", width=6, height=4)
 ```
 
 ### markers
 
 ::: {.panel-tabset}
 
-```{r plt-jst-mg, results="asis", fig.width=8, fig.height=3}
+```{r plt-jst-mg, results="asis", fig.width=12, fig.height=4}
 #| code-fold: true
 ps <- lapply(sub[sub != "tum"], \(.) {
-    na <- setdiff(levels(lys[[.]]$lv2), names(gs <- .mgs[[.]]))
+    ks <- levels((se <- lys[[.]])$lv2)
+    na <- setdiff(ks, names(gs <- .mgs[[.]]))
     gs <- c(gs, lapply(setNames(na, na), \(.) c()))
-    .plt_dp(lys[[.]], "lv2", gs, hc=FALSE)
+    .plt_dp(se, "lv2", gs, hc=FALSE)
 })
-for (. in names(ps)) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
+for (. in names(ps)[2]) {cat("####",.,"\n"); print(ps[[.]]); cat("\n\n")}
 ```
 
 :::
+
+```{r echo=FALSE, include=FALSE}
+for (. in names(ps)) {
+    gg <- ps[[.]] + theme(legend.position="none")
+    gg <- gg + scale_size_continuous(range=c(0.2, 2))
+    nm <- sprintf("figs/mgs,%s.pdf", .)
+    nx <- length(unique(gg@data$g))
+    ny <- length(unique(gg@data$k))
+    mx <- max(nchar(paste(gg@data$k)))
+    my <- max(nchar(paste(gg@data$g)))
+    ggsave(nm, gg + coord_flip(), units="cm", height=nx/6+mx/8, width=ny/6+my/8)
+}
+```
 
 ### spatial
 
 ::: {.panel-tabset}
 
-```{r plt-xy, results="asis", fig.width=6, fig.height=3, message=FALSE}
+```{r plt-jst-xy, results="asis", fig.width=4, fig.height=2, message=FALSE}
 #| code-fold: true
 df <- read_parquet("outs/pol.parquet", as_data_frame=FALSE)
 names(id) <- id <- names(cs <- split(seq(ncol(sce)), sce$sid))
-pal <- setNames(.pal_kid, levels(sce$lv2))
-l1 <- scale_fill_manual(NULL, values=.pal_sub)
-l2 <- scale_fill_manual(NULL, values=pal)
-ps <- lapply(id, \(.) {
-    se <- sce[, cs[[.]]]
-    (.plt_ps(df, se, "lv1", id=.) + l1) +
-    (.plt_ps(df, se, "lv2") + l2) +
-    plot_layout(nrow=1)
-})
-for (. in names(ps)) { cat("####", ., "\n"); print(ps[[.]]); cat("\n\n") }
+ps <- lapply(id, \(.) 
+    .plt_ps(df, sce[, cs[[.]]], "lv1", id=.) +
+    scale_fill_manual(NULL, values=.pal_sub) )
+qs <- lapply(id, \(.)
+    .plt_ps(df, sce[, cs[[.]]], "lv2", id=.) +
+    scale_fill_manual(NULL, values=.pal_lv2, limits=names(.pal_lv2)) )
+pq <- lapply(id, \(.) 
+    wrap_plots(ps[[.]], qs[[.]]) & 
+    theme(plot.margin=margin(r=4)))
+for (. in names(pq)) { 
+    cat("####", ., "\n")
+    print(pq[[.]]); cat("\n\n") }
 ```
 
 :::
+
+```{r echo=FALSE, include=FALSE}
+.pdf(ps, "figs/lv1,xy.pdf", 10)
+.pdf(qs, "figs/lv2,xy.pdf", 10)
+```
 
 ## appendix
 

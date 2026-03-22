@@ -7,20 +7,46 @@
     "#aa8282", "#d4b7b7", "#8600bf", "#ba5ce3", "#808000",
     "#aeae5c", "#1e90ff", "#00bfff", "#56ff0d", "#ffff00")
 
-.pal_sid <- unname(pals::trubetskoy())
-.pal_div <- c("turquoise4", "turquoise", "grey95", "magenta", "magenta4")
 
-.pal_sub <- c(
-    epi="lightgrey",
-    mye="turquoise", 
-    nkt="gold", 
-    str="deeppink", 
-    tum="darkslateblue")
+.pal_lv2 <- c(
+    tum="seashell", 
+    FRCcts="#55A1B1", FRCtcz="#8DD3C7",
+    FRCpv="#882E72", BEC="#E7298A", LEC="#E78AC3",
+    FDC="#999999",
+    Tex="#DC050C", NK="#FB8072", 
+    Tcn="#FF7F00", Tem="#FDB462",
+    Thn="#1965B0", Tfh="#7BAFDE", 
+    Treg="#7570B3", Tpex="#BEAED4",
+    epi="#A6761D", mCAF="#E6AB02", 
+    mono="#009E73", pDC="darkseagreen", mregDC="#56ff0d",
+    TAM.GAL="turquoise", TAM.C1Q="#ffff00", TAM.MMP="#ba5ce3")
+
+.pal_sub <- c(nkt="gold", mye="turquoise", str="deeppink", epi="lightgrey", tum="darkslateblue")
 .pal_typ <- c(LN="#56B4E9", SO="#009E73", NP="#F0E442", EY="#D55E00", TO="#0072B2")
 .pal_gid <- c(m="lightsteelblue", n="khaki", d="indianred", t="darkseagreen")
-.pal_pid <- c(pals::tol(12), "grey50")
+.pal_pid <- RColorBrewer::brewer.pal(12, "Set3")
+.pal_sid <- c(
+    "011LNd"="#DC050C", "012LNd"="#FB8072",  
+    "020LNm"="#7BAFDE", 
+    "031LNd"="#B17BA6", 
+    "051LNn"="#FF7F00", "052LNn"="#FDB462", 
+    "061LNd"="#E7298A", "062LNd"="#E78AC3",
+    "071NPd"="#33A02C", "072NPd"="#B2DF8A", 
+    "080LNn"="#8DD3C7", 
+    "091EYn"="#A6761D", "092EYn"="#E6AB02", 
+    "100LNd"="#999999", 
+    "111LNn"="#8600bf", "112LNn"="#ba5ce3", 
+    "121LNm"="#1e90ff", "122LNm"="#00bfff") 
 
-.pal_ctx <- pals::brewer.set3(10)
+.pal_ccc <- c("steelblue2", "ivory", "deeppink2")
+.pal_sig <- c("turquoise", "ivory", "slateblue")
+
+.pal_bow <- pals::kovesi.diverging_rainbow_bgymr_45_85_c67(11)
+.pal_div <- c("turquoise4", "turquoise", "grey95", "magenta", "magenta4")
+.pal_ctx <- c(
+    TUM="seashell", RIM="papayawhip", TAM=.pal_lv2[["TAM.MMP"]],
+    MIX="palegreen", LEC=.pal_lv2[["LEC"]], BEC=.pal_lv2[["BEC"]],
+    TCZ=.pal_lv2[["Tfh"]], CAF=.pal_lv2[["mCAF"]], EPI=.pal_lv2[["epi"]])
 
 # thresholded z-normalization
 .z <- \(x, th=2.5) {
@@ -251,7 +277,7 @@ suppressPackageStartupMessages({
                     colors=pals::jet())
             })
         aes <- list(aes, .thm_xy_c(s))
-        df <- df[order(abs(df[[c]]), na.last=FALSE), ]
+        #df <- df[order(abs(df[[c]]), na.last=FALSE), ]
     } else {
         aes <- list(.thm_xy_d(s), scale_color_manual(values=.pal))
     }
@@ -307,7 +333,7 @@ suppressPackageStartupMessages({
         mutate_at("k", factor, yo)
     ggplot(mu, aes(g, k, col=self.average, size=self.detected)) + 
         scale_color_gradient2(low="blue3", mid="grey95", high="red3") +
-        scale_size_continuous(breaks=seq(0, 1, .2), range=c(1, 5)) +
+        scale_size_continuous(breaks=seq(0, 1, .2), range=c(0.4, 4)) +
         guides(col=guide_colorbar(order=1)) +
         geom_point() + coord_equal() + box +
         .thm_fig_c("minimal") + theme(
@@ -408,6 +434,7 @@ suppressPackageStartupMessages({
 # qs = scalar or length-2 numeric; quantiles to use when 't == "q"'
 # hl = logical/character vector; cells to highlight (others are 'blacked out')
 .plt_ps <- \(df, sce=NULL, c="white", a=1,
+    assay="logcounts", na="lightgrey",
     t=c("n", "z", "q"), th=2.5, qs=0.01, 
     hl=NULL, lw=0.1, lc="lightgrey", id=NULL) {
     library(dplyr)
@@ -424,7 +451,7 @@ suppressPackageStartupMessages({
     j <- setdiff(names(colData(sce)), names(df))
     df <- cbind(as.data.frame(df), colData(sce)[i, j])
     if (c %in% rownames(sce)) {
-        df[[c]] <- logcounts(sce)[c, i]
+        df[[c]] <- assay(sce, assay)[c, i]
         # continuous coloring
         pal <- switch(match.arg(t), 
             n={ # no transformation
@@ -455,10 +482,10 @@ suppressPackageStartupMessages({
                 pal <- pal[!is.na(names(pal))]
             }
             pal <- scale_fill_manual(NULL, values=pal, 
-                na.value="lightgrey", breaks=names(pal))
+                na.value=na, breaks=names(pal))
             thm <- list(pal, .thm_fig_d("void", "f"))
         } else {
-            pal <- scale_fill_gradientn(colors=pals::jet())
+            pal <- scale_fill_gradientn(colors=pals::jet(), na.value=na)
             thm <- list(pal, .thm_fig_c("void"))
         }
     } else {
@@ -481,7 +508,7 @@ suppressPackageStartupMessages({
 }
 
 # spatial plot
-.plt_xy <- \(x, k, id="", s=NULL, split=FALSE, na=FALSE) {
+.plt_xy <- \(x, k, id="", s=NULL, split=FALSE, na=FALSE, dpi=100, o=TRUE) {
     # dependencies
     library(ggplot2)
     library(ggrastr)
@@ -505,7 +532,7 @@ suppressPackageStartupMessages({
     # plotting
     if (!is.numeric(df$k)) {
         fd <- if (na) df else df[!is.na(df$k), ]
-        p0 <- ggplot(fd, aes(x, y, col=k)) + .thm_xy_d(pt) +
+        p0 <- ggplot(fd, aes(x, y, col=k)) + .thm_xy_d(pt, dpi) +
             scale_color_manual(NULL, drop=FALSE, values=.pal, 
                 na.value="lightgrey", breaks=\(.) setdiff(., NA)) +
             ggtitle(.lab(id, sum(!is.na(fd$k))))
@@ -519,8 +546,8 @@ suppressPackageStartupMessages({
         })
         c(list(all=p0), ps)
     } else {
-        df <- df[order(df$k, na.last=FALSE), ]
-        ggplot(df, aes(x, y, col=k)) + .thm_xy_c(pt) +
+        if (o) df <- df[order(df$k, na.last=FALSE), ]
+        ggplot(df, aes(x, y, col=k)) + .thm_xy_c(pt, dpi) +
             scale_color_gradientn(NULL, colors=pals::jet(), na.value="lightgrey") +
             ggtitle(.lab(id, nrow(df)))
     }
@@ -673,7 +700,7 @@ suppressPackageStartupMessages({
 
 # base figure theme
 .thm_fig <- \(.="minimal") {
-    thm <- get(paste0("theme_", .))(9)
+    thm <- get(paste0("theme_", .))(5)
     list(thm, theme(
         legend.key=element_blank(),
         plot.background=element_blank(),
@@ -688,7 +715,7 @@ suppressPackageStartupMessages({
 .thm_fig_d <- \(., l=c("c", "f")) {
     aes <- switch(match.arg(l),
         c=list(alpha=1, shape=19, size=1),
-        f=list(alpha=1, shape=21, stroke=0, col=NA, size=2))
+        f=list(alpha=1, shape=21, stroke=0, col=NA, size=1))
     thm <- list(theme(
         legend.key.size=unit(0, "lines")),
         guides(col=guide_legend(ncol=1, override.aes=aes)),
@@ -705,67 +732,66 @@ suppressPackageStartupMessages({
 }
 
 # theme for spatial plots
-.thm_xy <- \(s=0.1) list(
+.thm_xy <- \(s=0.1, dpi=100) list(
     ggrastr::geom_point_rast(show.legend=TRUE,
-        shape=16, stroke=0, size=s, raster.dpi=100),
+        shape=16, stroke=0, size=s, raster.dpi=dpi),
     scale_x_continuous(expand=expansion(0, 0.1)),
     scale_y_continuous(expand=expansion(0, 0.1)),
     coord_equal(), theme(
         plot.margin=margin(),
         plot.title=element_text(hjust=0.5),
         panel.background=element_rect(fill=NA)))
-.thm_xy_d <- \(s=0.1) c(.thm_fig_d("void"), .thm_xy(s))
-.thm_xy_c <- \(s=0.1) c(.thm_fig_c("void"), .thm_xy(s))
+.thm_xy_d <- \(s=0.1, dpi=100) c(.thm_fig_d("void"), .thm_xy(s, dpi))
+.thm_xy_c <- \(s=0.1, dpi=100) c(.thm_fig_c("void"), .thm_xy(s, dpi))
 
 # mgs ----
 
 .mgs <- list(
     nkt=list(
-        Thn=c(
-            "CD2", "CD3D", "CD3E", "CD3G", "CD4", "CD5", "CD6", "CD28", "CD44", # canonical
-            "LEF1", "TCF7", "LTB"), # naivety
-        Tcm=c("IL7R", "CCR7", "KLF2", "KLF3", "BACH2", "FOXP1", "IKZF1", "SATB1"),
-        Tfh=c("ICOS", "BCL6", "CXCL13", "CD40LG"),
-        Treg=c("TNFRSF4", "IL2RA", "FOXP3", "CTLA4"),
-        Tcn=c("CD8A", "CD8B"),
-        Tem=c("STAT4", "CX3CR1", "JUN", "JUNB", "CCL5", "IL10RA"),
-        Tex=c("HAVCR2", "TIGIT", "LAG3", "TOX", "PDCD1", "IFNG", 
-            "KLRG1", "PRF1", "CXCR6", "GLNY", "DUSP4", "EOMES",
-            "GZMA", "GZMB", "GZMH", "GZMK"),
-        NK=c("ENTPD1", "NKG7", "TBX21", "KLRB1", "KLRC3", "IL2RB", "CD7", "FOS", "FOSB")
+        # "CD5", "CD6", "CD25", "CD27", "CD28", "CD44"
+        Tcn=c("CD8A", "CD8B", "LEF1", "SELL", "CCR7", "TCF7", "LTB"), # naivety
+        Thn=c("CD3D", "CD3E", "CD4", "ENO2", "IL6R", "CD28", "TRBC1", "TRAC"), # canonical
+        Treg=c("IL2RA", "FOXP3", "CTLA4", "MAF", "CCR4"),
+        Tfh=c("ICOS", "BCL6", "CD40LG", "IL7R", "CD69"),
+        Tem=c("KLF2", "KLF3", "CD274", "STAT4", "JUNB", "IL10RA"),
+        NK=c("GZMA", "GZMH", "GZMB", "NKG7", "PRF1", "TBX21", "KLRB1", "KLRC3", "IL2RB"),
+        Tex=c("CCL5", "IFNG", "HAVCR2", "TIGIT", "LAG3", "TOX", 
+            "PDCD1", "KLRG1", "CXCR6", "GLNY", "EOMES", "GZMK"),
+        Tpex=c()
     ),
     mye=list(
-        macro=c(
-            "CD14", "CD68", "CD163",
-            "MS4A4A", "MS4A6A", "MRC1", "SLC40A1", 
-            "IGF1", "SELENOP", "APOE"),
-        moDC=c(
-            "CSF1R", "TLR2", "TLR4", "ITGA9",
-            "MMP9", "MMP12", "MMP14", "LST1",
-            "ITGAX", "CTSD", "TREM2", "FCER1G"),
-        DC=c(
-            "CD1C", "XCR1", "LAMP3", "IDO1", "CLEC9A", "CLEC10A", "BATF3", 
-            "HLA-DPA1", "HLA-DPB1", "HLA-DQB1", "CIITA", "MARCH1"),
-        pDC=c("IRF4", "IRF7", "IRF8", "CR2", "FCRL2", "FCRL5", "CLEC4C"),
-        mono.nc=c("MARCO", "C1QA", "C1QB", "C1QC", 
-            "B2M", "AIF1", "BLVRB", "FCGR3A", "CX3CR1", "LILRB2"),
-        mono.c=c("FBP1", "PCK2", "LYZ", "S100A8","S100A9")
+        mono=c("S100A8","S100A9", "VCAN", 
+            "TGFBI", "IL1B", "SPP1", "IFI30",
+            "FCGR3A", "CD14"),
+        TAM.C1Q=c(
+            "CYBA", "CYBB", 
+            "GLUL", "APOC1",
+            "CD68", "APOE", 
+            "C1QA", "C1QB", "C1QC", "CD163", 
+            "MS4A4A", "MARCO", "SLC40A1", "SELENOP", "CD209"),
+        TAM.MMP=c("ITGAX", "CSF1R", "MMP9", "MMP14", "MMP15", "MMP25"),#grepv("^MMP", rownames(sce))),
+        TAM.GAL=c("CSTB", "LGALS3", "CXCL9", "FTL"),
+        mregDC=c(
+            "XCR1", "LAMP3", "IDO1", "CLEC9A",
+            "HLA-DOA", "HLA-DOB", "HLA-DPA1", "IRF8"),
+            #grepv("HLA-", rownames(sce))),
+            #"HLA-DPA1", "HLA-DPB1", "HLA-DQB1", 
+        pDC=c("IRF4", "IRF7", "FCRL2", "FCRL5", "LILRA4", "PLD4")
     ),
     str=list(
-        fib=c(
-            "COL1A1", "COL1A2", "COL3A1", "COL4A1", "COL5A1", 
-            "COL5A2", "COL6A3", "COL12A1", "COL14A1", "COL18A1"),
-        mCAF=c("FN1", "LAMA4", "DCN", "MMP1", "MMP2", "IGF2", "POSTN", "IGFBP5"),
-        FRCtcz=c("DNM1", "COL27A1", "FDCSP", "CLU", "CR2", "CXCL13"),
-        FRCcts=c("CCN1", "JUNB", "JUN", "FOS", "FOSB", "CCL2", "EGR1", "EGR3", "GBP1"),
+        mCAF=c(
+            "COL1A1", "COL1A2", "COL3A1", #"COL5A1", "COL5A2", "COL6A3", "COL12A1", 
+            "MMP1", "MMP2", "FN1", "DCN", "POSTN"),
+        FRCtcz=c("CXCL12", "CCL19", "CCL21"),
+        FRCcts=c("CCN1", "JUN", "FOS", "CCL2", "EGR1", "EGR3", "COL14A1"),#, "PDGFRA"),
         FRCpv=c(
-            "PDGFRA", "PDGFRB", "VCAM1", "VEGFA", "NDRG2", 
-            "MYL9", "CCL19", "CCL21", "CXCL12", "NOTCH3"),
-        BEC=c(
-            "NOTCH4", "FLT1", "CLEC14A", "CDH5", "CD34", "CD93", 
-            "VWF", "HEY1", "DLL4", "CAV1"),
-        LEC=c("LYVE1", "PROX1", "CXCL1", "CXCL2"),
-        epi=c("KRT5", "KRT7", "KRT14", "KRT16", "KRT17", "KRT19")
+            "PDGFRB", "ACTA2", "MHY11", "PDGFA", "NOTCH3", 
+            "COL5A3", "COL18A1", "COL4A1",
+            "HEY1", "CAV1"),
+        BEC=c("FLT1", "NOTCH4", "CDH5", "CD34", "CD93", "VWF"),
+        LEC=c("CAVIN2", "LYVE1", "PROX1", "PDPN"),
+        FDC=c("CXCL13", "FDCSP", "CLU", "CR1", "CR2", "SRGN", "SERPINE2"),
+        epi=c("MUC4", "CDH1", "CLDN4", "KRT6B", "KRT18")
     ),
     tum=list(
         tum=c("CCND1", 
